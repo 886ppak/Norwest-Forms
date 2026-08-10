@@ -305,6 +305,24 @@ let state = defaultState();
 let activeDay = 0;
 let preClearBackup = null;
 
+function timeSelectHtml(field, currentValue){
+  const [curH, curM] = (currentValue||'').split(':');
+  let hourOpts = `<option value="">--</option>`;
+  for(let h=0; h<24; h++){
+    const hh = String(h).padStart(2,'0');
+    hourOpts += `<option value="${hh}" ${curH===hh?'selected':''}>${hh}</option>`;
+  }
+  let minOpts = `<option value="">--</option>`;
+  ['00','15','30','45'].forEach(mm=>{
+    minOpts += `<option value="${mm}" ${curM===mm?'selected':''}>${mm}</option>`;
+  });
+  return `<div style="display:flex; gap:6px; align-items:center;">
+    <select data-timefield="${field}" data-timepart="h" style="flex:1">${hourOpts}</select>
+    <span style="font-weight:700; color:var(--muted)">:</span>
+    <select data-timefield="${field}" data-timepart="m" style="flex:1">${minOpts}</select>
+  </div>`;
+}
+
 function calcDailyHours(d){
   return d.jobs.reduce((s,j)=> s + (parseFloat(j.hours)||0), 0);
 }
@@ -342,8 +360,8 @@ function renderDay(){
   html += `
     <div class="field"><label>Date <span style="font-weight:500; text-transform:none; font-size:10.5px">(set via Week Ending above)</span></label><input type="date" value="${d.date}" readonly onclick="flashWeekEnding(); this.blur();" style="background:#f0ede5; color:var(--muted)"></div>
     <div class="row2">
-      <div class="field"><label>Start time</label><input type="time" step="900" data-f="start" value="${d.start}"></div>
-      <div class="field"><label>Finish time</label><input type="time" step="900" data-f="finish" value="${d.finish}"></div>
+      <div class="field"><label>Start time</label>${timeSelectHtml('start', d.start)}</div>
+      <div class="field"><label>Finish time</label>${timeSelectHtml('finish', d.finish)}</div>
     </div>
     <div class="field"><label>Lunch break (mins)</label><input type="number" inputmode="numeric" data-f="lunch" value="${d.lunch}"></div>
     <div class="daily-total"><span class="lbl">Total daily hours <span style="font-weight:500; text-transform:none; font-size:10.5px">(sum of job hours)</span></span><span class="num" id="dailyTotalNum">${hrs.toFixed(1)}</span></div>
@@ -395,6 +413,16 @@ function renderDay(){
     inp.addEventListener('input', e=>{
       state.days[activeDay][e.target.dataset.f] = e.target.value;
       // start/finish/lunch are informational only — no recalculation triggered
+    });
+  });
+  document.querySelectorAll('[data-timefield]').forEach(sel=>{
+    sel.addEventListener('change', e=>{
+      const field = e.target.dataset.timefield; // 'start' or 'finish'
+      const container = e.target.closest('div');
+      const hSel = container.querySelector('[data-timepart="h"]');
+      const mSel = container.querySelector('[data-timepart="m"]');
+      const h = hSel.value, m = mSel.value;
+      state.days[activeDay][field] = (h && m) ? `${h}:${m}` : '';
     });
   });
   document.querySelectorAll('[data-jf]:not([data-jf="clientSelect"])').forEach(inp=>{
