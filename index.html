@@ -246,16 +246,45 @@ function lookupJobNumber(client, dateISO){
 async function checkForUpdatesAndRefresh(){
   const icon = document.getElementById('jnRefreshIcon');
   if(icon) icon.classList.add('spinning');
-  // check for a newer app version first — if found, this triggers a reload
-  // (via the controllerchange listener below) and the job number fetch
-  // below won't get to finish, which is fine — the reload picks up everything fresh
+
+  // check whether a genuinely newer app version is available
+  let updateFound = false;
   if('serviceWorker' in navigator){
     try{
       const reg = await navigator.serviceWorker.getRegistration();
-      if(reg) await reg.update();
+      if(reg){
+        updateFound = await new Promise(resolve=>{
+          let done = false;
+          const finish = v => { if(!done){ done=true; resolve(v); } };
+          const timer = setTimeout(()=>finish(false), 4000);
+          reg.addEventListener('updatefound', ()=>{
+            const nw = reg.installing;
+            if(nw) nw.addEventListener('statechange', ()=>{
+              if(nw.state==='installed' && navigator.serviceWorker.controller){
+                clearTimeout(timer); finish(true);
+              }
+            });
+          });
+          reg.update().catch(()=>{ clearTimeout(timer); finish(false); });
+        });
+      }
     }catch(e){}
   }
-  await fetchJobNumbers(false);
+
+  if(updateFound){
+    showToast('New app version found — updating now…');
+    if(icon) icon.classList.remove('spinning');
+    return; // the page reloads automatically once the new version takes over
+  }
+
+  const beforeTs = getJobNumbersUpdated();
+  await fetchJobNumbers(true); // silent — showing our own combined message below
+  const afterTs = getJobNumbersUpdated();
+  if(afterTs && afterTs !== beforeTs){
+    showToast("You're on the latest version — job numbers updated");
+  } else {
+    showToast("You're on the latest version — couldn't refresh job numbers, check connection");
+  }
   if(icon) icon.classList.remove('spinning');
 }
 
