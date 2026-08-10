@@ -630,7 +630,7 @@ function buildPdf(){
   doc.text('WEEKLY TIMESHEET', right, y+16, {align:'right'});
 
   // --- email line ---
-  y += 26;
+  y += 38;
   doc.setFont(undefined,'bold'); doc.setFontSize(8.5); doc.setTextColor(...INK);
   const pre = 'Email completed timesheet and Hire Dockets to ';
   doc.text(pre, left, y);
