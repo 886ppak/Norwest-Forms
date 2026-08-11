@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norwest-timesheet-v11';
+const CACHE_NAME = 'norwest-timesheet-v12';
 const APP_SHELL = [
   './',
   './index.html',
