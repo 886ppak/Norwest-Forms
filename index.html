@@ -338,8 +338,8 @@ const FIELD_DEFS = [
   ['fifo','FIFO travel time (hrs)','number'],
   ['travelOwn','Travel allow — own car','number'],
   ['siteAllow','Site specific allow.','number'],
-  ['leadHand','Leading hand allow.','number'],
-  ['supAllow','Supervisor allow.','number'],
+  ['leadHand','Leading hand allow.','yesno'],
+  ['supAllow','Supervisor allow.','yesno'],
   ['higherDuties','Higher duties (crane size)','text'],
   ['laha','Shared accom (LAHA)','number'],
   ['truckOvernight','Truck overnight allow.','number'],
@@ -431,6 +431,13 @@ function renderDay(){
         <select data-hd="1">${opts}</select>
         ${selVal==='OTHER' ? `<input type="text" placeholder="Enter value" data-hdother="1" value="${isKnown?'':d.higherDuties}" style="margin-top:6px">` : ''}
       </div>`;
+    } else if(type==='yesno'){
+      html += `<div class="field"><label>${label}</label>
+        <select data-f="${key}">
+          <option value="" ${d[key]?'':'selected'}>—</option>
+          <option value="Yes" ${d[key]==='Yes'?'selected':''}>Yes</option>
+        </select>
+      </div>`;
     } else {
       html += `<div class="field"><label>${label}</label><input type="${type==='number'?'number':'text'}" ${type==='number'?'inputmode="decimal"':''} data-f="${key}" value="${d[key]}"></div>`;
     }
@@ -465,6 +472,7 @@ function renderDay(){
     inp.addEventListener('input', e=>{
       state.days[activeDay][e.target.dataset.f] = e.target.value;
       // start/finish/lunch are informational only — no recalculation triggered
+      renderTotals();
     });
   });
   document.querySelectorAll('[data-timefield]').forEach(sel=>{
@@ -528,8 +536,8 @@ function renderTotals(){
     week += calcDailyHours(d);
     nsStandSum += parseFloat(d.nsStand)||0;
     travel += parseFloat(d.travelOwn)||0;
-    lead += parseFloat(d.leadHand)||0;
-    sup += parseFloat(d.supAllow)||0;
+    lead += d.leadHand==='Yes' ? calcDailyHours(d) : 0;
+    sup += d.supAllow==='Yes' ? calcDailyHours(d) : 0;
     fifo += parseFloat(d.fifo)||0;
   });
   const northwest = Math.max(0, week - fifo - nsStandSum); // Northwest allowance = productivity allowance
@@ -849,8 +857,8 @@ function buildPdf(){
   const week = state.days.reduce((s,d)=>s+calcDailyHours(d),0);
   const nsStandSum = state.days.reduce((s,d)=>s+(parseFloat(d.nsStand)||0),0);
   const travel = state.days.reduce((s,d)=>s+(parseFloat(d.travelOwn)||0),0);
-  const lead = state.days.reduce((s,d)=>s+(parseFloat(d.leadHand)||0),0);
-  const sup = state.days.reduce((s,d)=>s+(parseFloat(d.supAllow)||0),0);
+  const lead = state.days.reduce((s,d)=>s+(d.leadHand==='Yes'?calcDailyHours(d):0),0);
+  const sup = state.days.reduce((s,d)=>s+(d.supAllow==='Yes'?calcDailyHours(d):0),0);
   const fifoSum = state.days.reduce((s,d)=>s+(parseFloat(d.fifo)||0),0);
   const northwest = Math.max(0, week - fifoSum - nsStandSum); // Northwest allowance = productivity allowance
   [['NORTHWEST ALLOWANCE',northwest],['TRAVEL ALLOWANCE',travel],['LEADING HAND ALLOWANCE',lead],['SUPERVISOR ALLOWANCE',sup]].forEach(([lbl,val],i)=>{
