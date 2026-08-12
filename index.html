@@ -922,8 +922,7 @@ async function submitTimesheet(){
   const subjectTags = [];
   if(state.days.some(d=>d.leadHand==='Yes')) subjectTags.push('Leading Hand');
   if(state.days.some(d=>d.supAllow==='Yes')) subjectTags.push('Supervisor');
-  const hdSizes = [...new Set(state.days.map(d=>d.higherDuties).filter(Boolean))];
-  if(hdSizes.length) subjectTags.push(`Higher Duties ${hdSizes.join('/')}`);
+  if(state.days.some(d=>d.higherDuties)) subjectTags.push('Higher Duties');
   const subjectText = `Timesheet weekending ${weFormatted}` + (subjectTags.length ? ` (${subjectTags.join(', ')})` : '');
   const ADMIN_EMAIL = 'admin@norwestcranehire.com.au';
 
