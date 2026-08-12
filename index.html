@@ -422,14 +422,10 @@ function renderDay(){
   html += `<div style="margin-top:14px">`;
   rest.forEach(([key,label,type])=>{
     if(key==='higherDuties'){
-      const isKnown = HD_OPTS.includes(d.higherDuties);
-      const selVal = isKnown ? d.higherDuties : (d.higherDuties ? 'OTHER' : '');
       let opts = `<option value="">— Select —</option>`;
-      HD_OPTS.forEach(v=> opts += `<option value="${v}" ${selVal===v?'selected':''}>${v}</option>`);
-      opts += `<option value="OTHER" ${selVal==='OTHER'?'selected':''}>Other (type manually)</option>`;
+      HD_OPTS.forEach(v=> opts += `<option value="${v}" ${d.higherDuties===v?'selected':''}>${v}</option>`);
       html += `<div class="field"><label>${label}</label>
         <select data-hd="1">${opts}</select>
-        ${selVal==='OTHER' ? `<input type="text" placeholder="Enter value" data-hdother="1" value="${isKnown?'':d.higherDuties}" style="margin-top:6px">` : ''}
       </div>`;
     } else if(type==='yesno'){
       html += `<div class="field"><label>${label}</label>
@@ -520,11 +516,6 @@ function renderDay(){
   });
   const hdSel = document.querySelector('[data-hd]');
   if(hdSel) hdSel.addEventListener('change', e=>{
-    state.days[activeDay].higherDuties = e.target.value==='OTHER' ? '' : e.target.value;
-    renderDay();
-  });
-  const hdOther = document.querySelector('[data-hdother]');
-  if(hdOther) hdOther.addEventListener('input', e=>{
     state.days[activeDay].higherDuties = e.target.value;
   });
 }
