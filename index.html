@@ -350,7 +350,7 @@ function defaultState(){
     empName:'', weekEnding:'', empPrint:'', supPrint:'', position:'Full time',
     days: DAYS.map(()=>({date:'',start:'',finish:'',lunch:'',nsStand:'',leave:'',fifo:'',
       travelOwn:'',siteAllow:'',leadHand:'',supAllow:'',higherDuties:'',laha:'',truckOvernight:'',
-      jobs:[{no:'',client:'',hours:'',noAuto:false}]}))
+      jobs:[0,1,2].map(()=>({no:'',client:'',hours:'',noAuto:false}))}))
   };
 }
 let state = defaultState();
