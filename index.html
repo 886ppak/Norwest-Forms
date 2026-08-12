@@ -350,7 +350,7 @@ function defaultState(){
     empName:'', weekEnding:'', empPrint:'', supPrint:'', position:'Full time',
     days: DAYS.map(()=>({date:'',start:'',finish:'',lunch:'',nsStand:'',leave:'',fifo:'',
       travelOwn:'',siteAllow:'',leadHand:'',supAllow:'',higherDuties:'',laha:'',truckOvernight:'',
-      jobs:[0,1,2].map(()=>({no:'',client:'',hours:'',noAuto:false}))}))
+      jobs:[0,1,2].map(()=>({no:'',client:'',hours:''}))}))
   };
 }
 let state = defaultState();
@@ -486,9 +486,6 @@ function renderDay(){
       const ji = +e.target.dataset.job;
       const field = e.target.dataset.jf==='clientOther' ? 'client' : e.target.dataset.jf;
       state.days[activeDay].jobs[ji][field] = e.target.value;
-      if(field==='no'){
-        state.days[activeDay].jobs[ji].noAuto = false; // manual edit — stop auto-updating this one
-      }
       if(e.target.dataset.jf==='hours'){
         document.getElementById('dailyTotalNum').textContent = calcDailyHours(state.days[activeDay]).toFixed(1);
         renderTabs(); renderTotals();
@@ -501,13 +498,14 @@ function renderDay(){
       const client = e.target.value==='OTHER' ? '' : e.target.value;
       state.days[activeDay].jobs[ji].client = client;
       const job = state.days[activeDay].jobs[ji];
-      const canAutoFill = client && CLIENT_SITE_MAP[client] && (!job.no || job.noAuto);
-      if(canAutoFill){
+      if(client && CLIENT_SITE_MAP[client]){
         if(!state.days[activeDay].date){
           showToast('Set the Week Ending date up top to auto-fill job numbers');
         } else {
+          // sheet numbers come straight from the admin, so always overwrite
+          // whatever's currently in the box (even a manually-typed one)
           const num = lookupJobNumber(client, state.days[activeDay].date);
-          if(num){ job.no = num; job.noAuto = true; showToast(`Auto-filled job no. ${num} for ${client}`); }
+          if(num){ job.no = num; showToast(`Auto-filled job no. ${num} for ${client}`); }
           else showToast('No job number found for this month yet — check the sheet');
         }
       }
@@ -519,7 +517,7 @@ function renderDay(){
     state.days[activeDay].higherDuties = e.target.value;
   });
 }
-function addJob(){ state.days[activeDay].jobs.push({no:'',client:'',hours:'',noAuto:false}); renderDay(); }
+function addJob(){ state.days[activeDay].jobs.push({no:'',client:'',hours:''}); renderDay(); }
 
 function renderTotals(){
   let week=0, nsStandSum=0, travel=0, lead=0, sup=0, fifo=0;
@@ -560,7 +558,26 @@ function populateWeekDates(weekEndingISO){
   for(let i=0;i<7;i++){
     state.days[i].date = isoAddDays(weekEndingISO, -(6-i));
   }
+  autofillAllJobNumbers();
   renderDay(); renderTabs();
+}
+// Fills/overwrites the job number for every job line whose client has a known
+// site mapping and a sheet-sourced number for that day's month — runs whenever
+// the Week Ending date changes, so job details entered before the date was set
+// (or entered with a wrong/guessed number) still get the correct number without
+// the user having to re-touch the client dropdown. Sheet numbers come straight
+// from the admin, so they always win over whatever's currently in the box.
+function autofillAllJobNumbers(){
+  let filled = 0;
+  state.days.forEach(d=>{
+    if(!d.date) return;
+    d.jobs.forEach(job=>{
+      if(!job.client || !CLIENT_SITE_MAP[job.client]) return;
+      const num = lookupJobNumber(job.client, d.date);
+      if(num && job.no !== num){ job.no = num; filled++; }
+    });
+  });
+  if(filled) showToast(`Auto-filled ${filled} job number${filled===1?'':'s'} from the sheet`);
 }
 document.getElementById('empPrint').addEventListener('input', e=>state.empPrint=e.target.value);
 document.getElementById('supPrint').addEventListener('input', e=>state.supPrint=e.target.value);
