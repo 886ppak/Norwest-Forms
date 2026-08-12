@@ -920,8 +920,8 @@ async function submitTimesheet(){
   const file = new File([blob], name, {type:'application/pdf'});
   const weFormatted = state.weekEnding ? state.weekEnding.split('-').reverse().join('/') : '';
   const subjectTags = [];
-  if(state.days.some(d=>d.leadHand==='Yes')) subjectTags.push('Leading Hand');
-  if(state.days.some(d=>d.supAllow==='Yes')) subjectTags.push('Supervisor');
+  if(state.days.some(d=>d.leadHand==='Yes')) subjectTags.push('Leading Hand Allowance');
+  if(state.days.some(d=>d.supAllow==='Yes')) subjectTags.push('Supervisor Allowance');
   if(state.days.some(d=>d.higherDuties)) subjectTags.push('Higher Duties');
   const subjectText = `Timesheet weekending ${weFormatted}` + (subjectTags.length ? ` (${subjectTags.join(', ')})` : '');
   const ADMIN_EMAIL = 'admin@norwestcranehire.com.au';
