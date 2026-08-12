@@ -599,6 +599,21 @@ function clearSig(id){
   const c = document.getElementById(id), ctx=c.getContext('2d');
   ctx.clearRect(0,0,c.width,c.height);
 }
+// Signature canvases are captured at devicePixelRatio (2-3x on phones) for smooth
+// on-screen drawing, but only ever printed ~30pt tall in the PDF — embedding that
+// full-resolution capture bloats the PDF for no visible gain. Downscale to a fixed
+// resolution with plenty of headroom for print sharpness before embedding.
+function sigDataUrlForPdf(canvasId, maxH){
+  const c = document.getElementById(canvasId);
+  const targetH = maxH || 240;
+  const scale = Math.min(1, targetH / c.height);
+  if(scale >= 1) return c.toDataURL('image/png');
+  const out = document.createElement('canvas');
+  out.width = Math.round(c.width*scale);
+  out.height = Math.round(c.height*scale);
+  out.getContext('2d').drawImage(c, 0, 0, out.width, out.height);
+  return out.toDataURL('image/png');
+}
 function restoreSigFromDataUrl(canvasId, dataUrl){
   const c = document.getElementById(canvasId);
   const ctx = c.getContext('2d');
@@ -695,7 +710,7 @@ function drawCell(doc,x,y,w,h,text,opts={}){
 
 function buildPdf(){
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({orientation:'landscape', unit:'pt', format:'a4'});
+  const doc = new jsPDF({orientation:'landscape', unit:'pt', format:'a4', compress:true});
   const pw = doc.internal.pageSize.getWidth();
   const M = 18, left = M, right = pw-M;
   const INK=[20,20,20], BLUE=[28,79,156], ORANGE=[232,98,44], GREY=[242,242,242],
@@ -802,8 +817,7 @@ function buildPdf(){
     doc.text(l, x+c1/2, footTop+22+i*7.5, {align:'center'});
   });
   try{
-    const empC = document.getElementById('empSig');
-    doc.addImage(empC.toDataURL('image/png'),'PNG', x+10, footTop+footH-38, c1-20, 30);
+    doc.addImage(sigDataUrlForPdf('empSig'),'PNG', x+10, footTop+footH-38, c1-20, 30);
   }catch(e){}
   drawCell(doc,x,footTop+footH-14,55,14,'PRINT NAME:',{align:'left',bold:true,size:6.5});
   drawCell(doc,x+55,footTop+footH-14,c1-55,14,state.empPrint||'',{size:7});
@@ -817,8 +831,7 @@ function buildPdf(){
     doc.text(l, x+c2/2, footTop+22+i*7.5, {align:'center'});
   });
   try{
-    const supC = document.getElementById('supSig');
-    doc.addImage(supC.toDataURL('image/png'),'PNG', x+10, footTop+footH-38, c2-20, 30);
+    doc.addImage(sigDataUrlForPdf('supSig'),'PNG', x+10, footTop+footH-38, c2-20, 30);
   }catch(e){}
   drawCell(doc,x,footTop+footH-14,55,14,'PRINT NAME:',{align:'left',bold:true,size:6.5});
   drawCell(doc,x+55,footTop+footH-14,c2-55,14,state.supPrint||'',{size:7});
