@@ -919,7 +919,12 @@ async function submitTimesheet(){
   const name = fileName();
   const file = new File([blob], name, {type:'application/pdf'});
   const weFormatted = state.weekEnding ? state.weekEnding.split('-').reverse().join('/') : '';
-  const subjectText = `Timesheet weekending ${weFormatted}`;
+  const subjectTags = [];
+  if(state.days.some(d=>d.leadHand==='Yes')) subjectTags.push('Leading Hand');
+  if(state.days.some(d=>d.supAllow==='Yes')) subjectTags.push('Supervisor');
+  const hdSizes = [...new Set(state.days.map(d=>d.higherDuties).filter(Boolean))];
+  if(hdSizes.length) subjectTags.push(`Higher Duties ${hdSizes.join('/')}`);
+  const subjectText = `Timesheet weekending ${weFormatted}` + (subjectTags.length ? ` (${subjectTags.join(', ')})` : '');
   const ADMIN_EMAIL = 'admin@norwestcranehire.com.au';
 
   // copy the admin address to the clipboard so it's a one-tap paste into
