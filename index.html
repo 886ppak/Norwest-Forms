@@ -504,6 +504,8 @@ const LEAVE_TYPES = [
   ['dil', 'Day in Lieu (DIL)'],
   ['other', 'Other (Armed Forces/Jury Duty — attach documents separately)'],
 ];
+// Frequent-flyer numbers barely ever change and are annoying to retype — kept in
+// localStorage so they survive page reloads/app updates, unlike the rest of leaveState.
 function defaultLeaveState(){
   const rows = {};
   LEAVE_TYPES.forEach(([key])=> rows[key] = {first:'', last:'', returnDate:'', totalDays:''});
@@ -511,13 +513,22 @@ function defaultLeaveState(){
     empName:'', position:'', empNo:'',
     leaveRows: rows,
     paymentMethod:'',
-    qantasFF:'', virginVelocity:'',
+    qantasFF: localStorage.getItem('leaveQantasFF')||'',
+    virginVelocity: localStorage.getItem('leaveVirginVelocity')||'',
     outDate:'', outDestination:'', outAmPm:'',
     inDate:'', inDepartingFrom:'', inAmPm:'',
-    landTravel:'', landDestination:'',
+    landTravel:'', landDestination:'', landDestinationOther:false,
   };
 }
 let leaveState = defaultLeaveState();
+const AU_CITIES = ['Perth','Melbourne','Sydney','Adelaide','Darwin','Brisbane','Canberra','Hobart'];
+function daysBetween(firstISO, lastISO){
+  if(!firstISO || !lastISO) return '';
+  const [fy,fm,fd] = firstISO.split('-').map(Number);
+  const [ly,lm,ld] = lastISO.split('-').map(Number);
+  const diff = Math.round((Date.UTC(ly,lm-1,ld) - Date.UTC(fy,fm-1,fd)) / 86400000);
+  return diff>=0 ? diff : '';
+}
 
 function timeSelectHtml(field, currentValue){
   const [curH, curM] = (currentValue||'').split(':');
@@ -811,7 +822,17 @@ function renderLeaveView(){
           <option value="No" ${l.landTravel==='No'?'selected':''}>No</option>
         </select>
       </div>
-      ${l.landTravel==='Yes' ? `<div class="field"><label>Destination (your place of residence)</label><input type="text" id="leaveLandDestination" value="${l.landDestination}"></div>` : ''}
+      ${l.landTravel==='Yes' ? (()=>{
+        const isKnownCity = AU_CITIES.includes(l.landDestination);
+        const destSelVal = l.landDestinationOther ? 'OTHER' : (isKnownCity ? l.landDestination : (l.landDestination ? 'OTHER' : ''));
+        let destOpts = `<option value="">— Select destination —</option>`;
+        AU_CITIES.forEach(c=> destOpts += `<option value="${c}" ${destSelVal===c?'selected':''}>${c}</option>`);
+        destOpts += `<option value="OTHER" ${destSelVal==='OTHER'?'selected':''}>Other (type manually)</option>`;
+        return `<div class="field"><label>Destination (your place of residence)</label>
+          <select id="leaveLandDestinationSelect">${destOpts}</select>
+          ${destSelVal==='OTHER' ? `<input type="text" placeholder="Enter destination" id="leaveLandDestination" value="${isKnownCity?'':l.landDestination}" style="margin-top:6px">` : ''}
+        </div>`;
+      })() : ''}
       <div class="hint">You may be reimbursed a maximum of $850 per return journey (50% for one way) with prior approval. Keep original itemised invoices/receipts and complete an Expense Reimbursement declaration on your return.</div>
     </div>
   `;
@@ -822,12 +843,27 @@ function renderLeaveView(){
   document.getElementById('leaveEmpNo').addEventListener('input', e=>leaveState.empNo=e.target.value);
   document.querySelectorAll('#leaveMain [data-leave]').forEach(inp=>{
     inp.addEventListener('input', e=>{
-      leaveState.leaveRows[e.target.dataset.leave][e.target.dataset.lf] = e.target.value;
+      const key = e.target.dataset.leave;
+      const field = e.target.dataset.lf;
+      const row = leaveState.leaveRows[key];
+      row[field] = e.target.value;
+      if(field==='first' || field==='last'){
+        const days = daysBetween(row.first, row.last);
+        row.totalDays = days;
+        const totalEl = document.querySelector(`#leaveMain [data-leave="${key}"][data-lf="totalDays"]`);
+        if(totalEl) totalEl.value = days;
+      }
     });
   });
   document.getElementById('leavePaymentMethod').addEventListener('change', e=>leaveState.paymentMethod=e.target.value);
-  document.getElementById('leaveQantasFF').addEventListener('input', e=>leaveState.qantasFF=e.target.value);
-  document.getElementById('leaveVirginVelocity').addEventListener('input', e=>leaveState.virginVelocity=e.target.value);
+  document.getElementById('leaveQantasFF').addEventListener('input', e=>{
+    leaveState.qantasFF=e.target.value;
+    localStorage.setItem('leaveQantasFF', e.target.value);
+  });
+  document.getElementById('leaveVirginVelocity').addEventListener('input', e=>{
+    leaveState.virginVelocity=e.target.value;
+    localStorage.setItem('leaveVirginVelocity', e.target.value);
+  });
   document.getElementById('leaveOutDate').addEventListener('input', e=>leaveState.outDate=e.target.value);
   document.getElementById('leaveOutAmPm').addEventListener('change', e=>leaveState.outAmPm=e.target.value);
   document.getElementById('leaveOutDestination').addEventListener('input', e=>leaveState.outDestination=e.target.value);
@@ -835,6 +871,17 @@ function renderLeaveView(){
   document.getElementById('leaveInAmPm').addEventListener('change', e=>leaveState.inAmPm=e.target.value);
   document.getElementById('leaveInDepartingFrom').addEventListener('input', e=>leaveState.inDepartingFrom=e.target.value);
   document.getElementById('leaveLandTravel').addEventListener('change', e=>{ leaveState.landTravel=e.target.value; renderLeaveView(); });
+  const landDestSelectEl = document.getElementById('leaveLandDestinationSelect');
+  if(landDestSelectEl) landDestSelectEl.addEventListener('change', e=>{
+    if(e.target.value==='OTHER'){
+      leaveState.landDestinationOther = true;
+      leaveState.landDestination = '';
+    } else {
+      leaveState.landDestinationOther = false;
+      leaveState.landDestination = e.target.value;
+    }
+    renderLeaveView();
+  });
   const landDestEl = document.getElementById('leaveLandDestination');
   if(landDestEl) landDestEl.addEventListener('input', e=>leaveState.landDestination=e.target.value);
 }
