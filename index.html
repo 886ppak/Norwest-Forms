@@ -548,11 +548,9 @@ function renderDay(){
   });
   html += `<button class="addjob" onclick="addJob()">+ Add job line</button>`;
 
-  if(!isNWP){
-    html += `<div class="field" style="margin-top:16px"><label>Notes <span style="font-weight:500; text-transform:none; font-size:10.5px">(context for anything above standard — delays, extra hours, etc. Leave blank for N/A)</span></label>
-      <textarea data-f="notes" rows="3" style="width:100%; font:inherit; padding:9px; border-radius:9px; border:1.5px solid var(--line); resize:vertical">${d.notes||''}</textarea>
-    </div>`;
-  }
+  html += `<div class="field" style="margin-top:16px"><label>Notes <span style="font-weight:500; text-transform:none; font-size:10.5px">(context for anything above standard — delays, extra hours, etc. Leave blank for N/A)</span></label>
+    <textarea data-f="notes" rows="3" style="width:100%; font:inherit; padding:9px; border-radius:9px; border:1.5px solid var(--line); resize:vertical">${d.notes||''}</textarea>
+  </div>`;
 
   document.getElementById('dayCard').innerHTML = html;
 
@@ -851,6 +849,45 @@ function drawCell(doc,x,y,w,h,text,opts={}){
   }
 }
 
+// Page 2: daily notes, shared by every company's PDF (matches NCH-HR-FORM-025 page 2)
+function addNotesPage(doc){
+  const INK=[20,20,20], RED=[192,57,43];
+  doc.addPage('a4', 'portrait');
+  const pw2 = doc.internal.pageSize.getWidth();
+  const nLeft = 40, nRight = pw2-40, dayColW = 100, noteColW = (nRight-nLeft)-dayColW;
+  let ny = 40;
+
+  doc.setFillColor(...RED); doc.rect(nLeft, ny, nRight-nLeft, 22, 'F');
+  doc.setDrawColor(120,120,120); doc.setLineWidth(0.5); doc.rect(nLeft, ny, nRight-nLeft, 22, 'S');
+  doc.setFont(undefined,'bold'); doc.setFontSize(11); doc.setTextColor(255,255,255);
+  doc.text('Notes', (nLeft+nRight)/2, ny+15, {align:'center'});
+  ny += 22;
+
+  const noteRowH = 88;
+  DAYS.forEach((dayName,i)=>{
+    const d = state.days[i];
+    doc.setDrawColor(120,120,120); doc.setLineWidth(0.5);
+    doc.rect(nLeft, ny, dayColW, noteRowH, 'S');
+    doc.setFont(undefined,'bold'); doc.setFontSize(11); doc.setTextColor(...RED);
+    doc.text(dayName, nLeft+dayColW/2, ny+24, {align:'center'});
+    const dateBoxY = ny+34, dateBoxH = 20;
+    doc.rect(nLeft+8, dateBoxY, dayColW-16, dateBoxH, 'S');
+    doc.setFont(undefined,'normal'); doc.setFontSize(9); doc.setTextColor(...INK);
+    doc.text(fmtDateNotes(d.date), nLeft+dayColW/2, dateBoxY+13, {align:'center'});
+
+    doc.rect(nLeft+dayColW, ny, noteColW, noteRowH, 'S');
+    const noteText = (d.notes||'').trim();
+    doc.setFont(undefined, noteText?'normal':'italic');
+    doc.setFontSize(8.5); doc.setTextColor(...INK);
+    const lines = doc.splitTextToSize(noteText||'N/A', noteColW-12);
+    const maxLines = Math.floor((noteRowH-10)/11);
+    let ty = ny+13;
+    lines.slice(0,maxLines).forEach(line=>{ doc.text(line, nLeft+dayColW+6, ty); ty += 11; });
+
+    ny += noteRowH;
+  });
+}
+
 function buildPdf(){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({orientation:'landscape', unit:'pt', format:'a4', compress:true});
@@ -1017,42 +1054,7 @@ function buildPdf(){
   doc.setFont(undefined,'italic'); doc.setFontSize(6); doc.setTextColor(...RED);
   doc.text('Printed copies of this document are not controlled. Please ensure that this is the latest available version before use.', (left+right)/2, barY+10, {align:'center'});
 
-  // --- page 2: daily notes (matches NCH-HR-FORM-025 page 2) ---
-  doc.addPage('a4', 'portrait');
-  const pw2 = doc.internal.pageSize.getWidth();
-  const nLeft = 40, nRight = pw2-40, dayColW = 100, noteColW = (nRight-nLeft)-dayColW;
-  let ny = 40;
-
-  doc.setFillColor(...RED); doc.rect(nLeft, ny, nRight-nLeft, 22, 'F');
-  doc.setDrawColor(120,120,120); doc.setLineWidth(0.5); doc.rect(nLeft, ny, nRight-nLeft, 22, 'S');
-  doc.setFont(undefined,'bold'); doc.setFontSize(11); doc.setTextColor(255,255,255);
-  doc.text('Notes', (nLeft+nRight)/2, ny+15, {align:'center'});
-  ny += 22;
-
-  const noteRowH = 88;
-  DAYS.forEach((dayName,i)=>{
-    const d = state.days[i];
-    doc.setDrawColor(120,120,120); doc.setLineWidth(0.5);
-    doc.rect(nLeft, ny, dayColW, noteRowH, 'S');
-    doc.setFont(undefined,'bold'); doc.setFontSize(11); doc.setTextColor(...RED);
-    doc.text(dayName, nLeft+dayColW/2, ny+24, {align:'center'});
-    const dateBoxY = ny+34, dateBoxH = 20;
-    doc.rect(nLeft+8, dateBoxY, dayColW-16, dateBoxH, 'S');
-    doc.setFont(undefined,'normal'); doc.setFontSize(9); doc.setTextColor(...INK);
-    doc.text(fmtDateNotes(d.date), nLeft+dayColW/2, dateBoxY+13, {align:'center'});
-
-    doc.rect(nLeft+dayColW, ny, noteColW, noteRowH, 'S');
-    const noteText = (d.notes||'').trim();
-    doc.setFont(undefined, noteText?'normal':'italic');
-    doc.setFontSize(8.5); doc.setTextColor(...INK);
-    const lines = doc.splitTextToSize(noteText||'N/A', noteColW-12);
-    const maxLines = Math.floor((noteRowH-10)/11);
-    let ty = ny+13;
-    lines.slice(0,maxLines).forEach(line=>{ doc.text(line, nLeft+dayColW+6, ty); ty += 11; });
-
-    ny += noteRowH;
-  });
-
+  addNotesPage(doc);
   return doc;
 }
 
@@ -1204,10 +1206,11 @@ function buildPdfNWP(){
   doc.text('Issue Date: 10/03/2023', left, barY);
   doc.text('NP-ADM-TEM-005', left+(right-left)*0.42, barY, {align:'center'});
   doc.text('Revision: 8', left+(right-left)*0.75, barY, {align:'center'});
-  doc.text('Page 1 of 1', right, barY, {align:'right'});
+  doc.text('Page 1 of 2', right, barY, {align:'right'});
   doc.setFont(undefined,'italic'); doc.setFontSize(6); doc.setTextColor(...RED);
   doc.text('Printed copies of this document are not controlled. Please ensure that this is the latest available version before use.', (left+right)/2, barY+10, {align:'center'});
 
+  addNotesPage(doc);
   return doc;
 }
 
