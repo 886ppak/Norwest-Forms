@@ -1070,7 +1070,9 @@ function buildPdfNWP(){
 
   // --- logo / title ---
   let y = 18;
-  const logoH = 26, logoW = logoH * (350/157);
+  // sized to match the reference form's actual placed logo (~144x34pt, measured directly off
+  // the reference PDF — the source image's native ratio is narrower, so this is a deliberate stretch)
+  const logoH = 34, logoW = 144;
   try{ doc.addImage(LOGO_PNG_B64_NWP, 'PNG', left, y, logoW, logoH); }catch(e){}
 
   doc.setFont(undefined,'bold'); doc.setFontSize(17); doc.setTextColor(...INK);
@@ -1150,37 +1152,50 @@ function buildPdfNWP(){
   }
 
   // --- footer: signatures / totals ---
-  const footTop = gy+6, footH = 92;
-  const c1=200, c2=200, c3=210, c4=(right-left)-c1-c2-c3;
+  // Column widths below are fractions of content width, measured directly off the reference
+  // PDF (8 real columns: each of Employee/Client splits into a label cell + a separate wide
+  // signature-drawing cell — it's not one box with a heading over it, like NCH's form is).
+  const footTop = gy+6, footH = 73;
+  const contentW = right-left;
+  const fw = [0.1188,0.1581,0.1285,0.1468,0.1281,0.1287,0.0824,0.1086].map(f=>f*contentW);
+  const [empLabelW, empSigW, cliLabelW, cliSigW, totLabelW, totValW, thLabelW, thValW] = fw;
+
   x = left;
-  drawCell(doc,x,footTop,c1,footH,'',{});
+  // Employee: label cell (no Print Name row on the reference — Employee Name is already
+  // captured up top) + a separate signature-drawing cell
+  drawCell(doc,x,footTop,empLabelW,footH,'',{});
   doc.setFont(undefined,'bold'); doc.setFontSize(8); doc.setTextColor(...INK);
-  doc.text('Employee Signature:', x+c1/2, footTop+12, {align:'center'});
+  doc.text('Employee', x+empLabelW/2, footTop+16, {align:'center'});
+  doc.text('Signature:', x+empLabelW/2, footTop+27, {align:'center'});
   doc.setFont(undefined,'normal'); doc.setFontSize(6);
   ['I certify that these hours are','correct as per the Daily Hire','Docket and in accordance with','Fatigue Management'].forEach((l,i)=>{
-    doc.text(l, x+c1/2, footTop+22+i*7.5, {align:'center'});
+    doc.text(l, x+empLabelW/2, footTop+38+i*7.2, {align:'center'});
   });
+  x += empLabelW;
+  drawCell(doc,x,footTop,empSigW,footH,'',{});
   try{
-    doc.addImage(sigDataUrlForPdf('empSig'),'PNG', x+10, footTop+footH-38, c1-20, 30);
+    doc.addImage(sigDataUrlForPdf('empSig'),'PNG', x+8, footTop+footH-38, empSigW-16, 30);
   }catch(e){}
-  drawCell(doc,x,footTop+footH-14,55,14,'PRINT NAME:',{align:'left',bold:true,size:6.5});
-  drawCell(doc,x+55,footTop+footH-14,c1-55,14,state.empPrint||'',{size:7});
 
-  x += c1;
-  drawCell(doc,x,footTop,c2,footH,'',{});
-  doc.setFont(undefined,'bold'); doc.setFontSize(8);
-  doc.text('Client Signature:', x+c2/2, footTop+12, {align:'center'});
+  x += empSigW;
+  // Client: label cell (heading + cert text, then its own Print Name row) + signature-drawing cell
+  const cliTextH = footH*0.53, cliNameH = footH-cliTextH;
+  drawCell(doc,x,footTop,cliLabelW,cliTextH,'',{});
+  doc.setFont(undefined,'bold'); doc.setFontSize(8); doc.setTextColor(...INK);
+  doc.text('Client Signature:', x+cliLabelW/2, footTop+12, {align:'center'});
   doc.setFont(undefined,'normal'); doc.setFontSize(6);
   ['I certify this timesheet is an','accurate record of employee','hours and in line with Fatigue','Management'].forEach((l,i)=>{
-    doc.text(l, x+c2/2, footTop+22+i*7.5, {align:'center'});
+    doc.text(l, x+cliLabelW/2, footTop+22+i*7, {align:'center'});
   });
+  drawCell(doc,x,footTop+cliTextH,cliLabelW,cliNameH,'PRINT NAME:',{align:'center',bold:true,size:7});
+  x += cliLabelW;
+  drawCell(doc,x,footTop,cliSigW,cliTextH,'',{});
   try{
-    doc.addImage(sigDataUrlForPdf('supSig'),'PNG', x+10, footTop+footH-38, c2-20, 30);
+    doc.addImage(sigDataUrlForPdf('supSig'),'PNG', x+8, footTop+cliTextH-32, cliSigW-16, 28);
   }catch(e){}
-  drawCell(doc,x,footTop+footH-14,55,14,'PRINT NAME:',{align:'left',bold:true,size:6.5});
-  drawCell(doc,x+55,footTop+footH-14,c2-55,14,state.supPrint||'',{size:7});
+  drawCell(doc,x,footTop+cliTextH,cliSigW,cliNameH,state.supPrint||'',{align:'center',size:7.5});
 
-  x += c2;
+  x += cliSigW;
   const week = state.days.reduce((s,d)=>s+calcDailyHours(d),0);
   const productivity = state.days.reduce((s,d)=>s+nwpProductivityAllow(d),0);
   const standDown = state.days.reduce((s,d)=>s+(parseFloat(d.nsStand)||0),0);
@@ -1189,16 +1204,16 @@ function buildPdfNWP(){
   const rh3 = footH/4;
   [['TOTAL PRODUCTIVITY HOURS',productivity],['TOTAL STAND DOWN',standDown],['TOTAL TRAVEL FLIGHT HOUR',travelFlight],['TOTAL HIGHER DUTIES',higherDuties]].forEach(([lbl,val],i)=>{
     const yy = footTop+rh3*i;
-    drawCell(doc,x,yy,c3*0.72,rh3,lbl,{align:'left',size:5.3,bold:true});
-    drawCell(doc,x+c3*0.72,yy,c3*0.28,rh3,val.toFixed(1),{align:'center',size:6.5});
+    drawCell(doc,x,yy,totLabelW,rh3,lbl,{align:'left',size:5.3,bold:true});
+    drawCell(doc,x+totLabelW,yy,totValW,rh3,val.toFixed(1),{align:'center',size:6.5});
   });
 
-  x += c3;
-  drawCell(doc,x,footTop,c4,footH,'',{});
+  x += totLabelW+totValW;
+  drawCell(doc,x,footTop,thLabelW+thValW,footH,'',{});
   doc.setFont(undefined,'bold'); doc.setFontSize(9);
-  doc.text('Total Hours:', x+c4/2, footTop+16, {align:'center'});
+  doc.text('Total Hours:', x+(thLabelW+thValW)/2, footTop+16, {align:'center'});
   doc.setFontSize(30);
-  doc.text(week.toFixed(1), x+c4/2, footTop+footH/2+18, {align:'center'});
+  doc.text(week.toFixed(1), x+(thLabelW+thValW)/2, footTop+footH/2+18, {align:'center'});
 
   // --- bottom bar ---
   const barY = footTop+footH+16;
