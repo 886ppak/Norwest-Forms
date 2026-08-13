@@ -571,11 +571,12 @@ function renderDay(){
 
   html += `<h2 style="margin-top:16px">Job details</h2>`;
   const clientLabel = isNWP ? 'Job client / description' : 'Job client';
+  const clientList = isNWP ? CLIENTS.filter(c=>c!=='NCH FLIGHTS') : CLIENTS;
   d.jobs.forEach((j,ji)=>{
     const isKnown = CLIENTS.includes(j.client);
     const selVal = isKnown ? j.client : (j.client ? 'OTHER' : '');
     let clientOpts = `<option value="">— Select client —</option>`;
-    CLIENTS.forEach(c=> clientOpts += `<option value="${c}" ${selVal===c?'selected':''}>${c}</option>`);
+    clientList.forEach(c=> clientOpts += `<option value="${c}" ${selVal===c?'selected':''}>${c}</option>`);
     clientOpts += `<option value="OTHER" ${selVal==='OTHER'?'selected':''}>Other (type manually)</option>`;
 
     html += `<div class="job-row">
