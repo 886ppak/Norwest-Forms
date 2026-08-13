@@ -311,8 +311,15 @@ function applyCompany(code){
   renderDay(); renderTabs(); renderTotals();
 }
 function chooseCompany(code){
+  const isFirstTime = !getCompany(); // before we overwrite it
   localStorage.setItem('norwestCompany', code);
   document.getElementById('companyGate').style.display = 'none';
+  // only set the default on first-ever setup — switching companies mid-fill
+  // shouldn't clobber a position the user already picked
+  if(isFirstTime){
+    state.position = code==='NWP' ? 'Casual' : 'Full time';
+    document.getElementById('position').value = state.position;
+  }
   applyCompany(code);
 }
 function switchCompany(){
@@ -454,7 +461,7 @@ const FIELD_DEFS = [
 
 function defaultState(){
   return {
-    empName:'', weekEnding:'', empPrint:'', supPrint:'', position:'Full time',
+    empName:'', weekEnding:'', empPrint:'', supPrint:'', position: getCompany()==='NWP' ? 'Casual' : 'Full time',
     days: DAYS.map(()=>({date:'',start:'',finish:'',lunch:'',nsStand:'',leave:'',fifo:'',
       travelOwn:'',siteAllow:'',leadHand:'',supAllow:'',higherDuties:'',laha:'',truckOvernight:'',notes:'',
       jobs:[0,1,2].map(()=>({no:'',client:'',hours:''}))}))
@@ -875,7 +882,14 @@ function flashWeekEnding(message){
 function fmtDate(iso){
   if(!iso) return '';
   const [y,m,d] = iso.split('-');
-  return `${d}/${m}`;
+  return `${d}-${m}`;
+}
+// dd-mm-yyyy — the app-wide date convention everywhere except the job-numbers
+// sheet integration (month-only keys, e.g. "08-2026", which stays as-is)
+function fmtDateDDMMYYYY(iso){
+  if(!iso) return '';
+  const [y,m,d] = iso.split('-');
+  return `${d}-${m}-${y}`;
 }
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function fmtDateNotes(iso){
@@ -969,7 +983,7 @@ function buildPdf(){
   y += 12;
   const infoH = 20;
   const cols = [70,200,55,230,90, right-left-70-200-55-230-90];
-  const vals = ['Employee Name:', state.empName||'', 'Position:', state.position||'', 'Date Week Ending:', state.weekEnding? state.weekEnding.split('-').reverse().join('/'):''];
+  const vals = ['Employee Name:', state.empName||'', 'Position:', state.position||'', 'Date Week Ending:', state.weekEnding? fmtDateDDMMYYYY(state.weekEnding):''];
   const bolds = [true,false,true,false,true,false];
   let x = left;
   cols.forEach((w,i)=>{ drawCell(doc,x,y,w,infoH,vals[i],{bold:bolds[i],size:8}); x+=w; });
@@ -1143,7 +1157,7 @@ function buildPdfNWP(){
   y += 12;
   const infoH = 20;
   const cols = [70,200,55,230,90, right-left-70-200-55-230-90];
-  const vals = ['Employee Name:', state.empName||'', 'Position:', state.position||'', 'Date Week Ending:', state.weekEnding? state.weekEnding.split('-').reverse().join('/'):''];
+  const vals = ['Employee Name:', state.empName||'', 'Position:', state.position||'', 'Date Week Ending:', state.weekEnding? fmtDateDDMMYYYY(state.weekEnding):''];
   const bolds = [true,false,true,false,true,false];
   let x = left;
   cols.forEach((w,i)=>{ drawCell(doc,x,y,w,infoH,vals[i],{bold:bolds[i],size:8}); x+=w; });
@@ -1284,7 +1298,8 @@ function buildPdfForCompany(){
 
 function fileName(){
   const nm = (state.empName||'timesheet').trim().replace(/\s+/g,'_');
-  return `Timesheet_${nm}_${state.weekEnding||'week'}.pdf`;
+  const we = state.weekEnding ? fmtDateDDMMYYYY(state.weekEnding) : 'week';
+  return `Timesheet_${nm}_${we}.pdf`;
 }
 
 function isCanvasBlank(id){
@@ -1330,7 +1345,7 @@ async function submitTimesheet(){
   const blob = doc.output('blob');
   const name = fileName();
   const file = new File([blob], name, {type:'application/pdf'});
-  const weFormatted = state.weekEnding ? state.weekEnding.split('-').reverse().join('/') : '';
+  const weFormatted = state.weekEnding ? fmtDateDDMMYYYY(state.weekEnding) : '';
   const subjectTags = [];
   if(state.days.some(d=>d.leadHand==='Yes')) subjectTags.push('Leading Hand Allowance');
   if(state.days.some(d=>d.supAllow==='Yes')) subjectTags.push('Supervisor Allowance');
