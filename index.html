@@ -1526,16 +1526,26 @@ function buildLeavePdf(){
   const logoH = 24, logoW = logoH * (1200/264);
   try{ doc.addImage(LOGO_PNG_B64, 'PNG', right-logoW, y-4, logoW, logoH); }catch(e){}
 
-  y += 40;
-  const infoH = 20;
-  const nameW=45, nameValW=210, posW=55, posValW=130, noW=55, noValW=(right-left)-nameW-nameValW-posW-posValW-55;
+  // Name / Position / Emp No — plain underlined blanks, matching the real form
+  // (not boxed fields), each value written just above its line.
+  y += 46;
+  const underlineY = y + 3;
+  doc.setDrawColor(...INK); doc.setLineWidth(0.6);
   let x = left;
-  [['Name:',l.empName,nameW,nameValW],['Position:',l.position,posW,posValW],['Emp No:',l.empNo,55,noValW]].forEach(([lbl,val,lw,vw])=>{
-    drawCell(doc,x,y,lw,infoH,lbl,{bold:true,size:8}); x+=lw;
-    drawCell(doc,x,y,vw,infoH,val||'',{size:8}); x+=vw;
-  });
+  const idField = (label, val, lineLen) => {
+    doc.setFont(undefined,'bold'); doc.setFontSize(9); doc.setTextColor(...INK);
+    doc.text(label, x, y);
+    x += doc.getTextWidth(label) + 6;
+    const lineEnd = x + lineLen;
+    doc.line(x, underlineY, lineEnd, underlineY);
+    if(val){ doc.setFont(undefined,'normal'); doc.setFontSize(9); doc.text(String(val), x+4, y-1.5); }
+    x = lineEnd + 20;
+  };
+  idField('Name:', l.empName, 180);
+  idField('Position:', l.position, 115);
+  idField('Emp No:', l.empNo, right-x);
 
-  y += infoH + 12;
+  y += 26;
   doc.setFont(undefined,'bold'); doc.setFontSize(10.5); doc.setTextColor(...INK);
   doc.text('LEAVE AND R&R', left, y);
   y += 8;
@@ -1555,17 +1565,17 @@ function buildLeavePdf(){
   twoLineHeader(x, c4, ['RETURN TO','WORK DATE']); x+=c4;
   twoLineHeader(x, c5, ['TOTAL DAYS','REQUESTED']); x+=c5;
   drawCell(doc,x,y,cOff,hRow1H,'OFFICE USE ONLY',{align:'center',bold:true,size:6.3,fill:HEADGREY});
-  drawCell(doc,x,y+hRow1H,cOffEach,hRow2H,'HOURS AVAIL',{align:'center',bold:true,size:5,fill:HEADGREY});
-  drawCell(doc,x+cOffEach,y+hRow1H,cOffEach,hRow2H,'HOURS PAID',{align:'center',bold:true,size:5,fill:HEADGREY});
-  drawCell(doc,x+cOffEach*2,y+hRow1H,cOffEach,hRow2H,'LAHA Y/N',{align:'center',bold:true,size:5,fill:HEADGREY});
+  drawCell(doc,x,y+hRow1H,cOffEach,hRow2H,'HOURS AVAILABLE',{align:'center',bold:true,size:4.6,fill:HEADGREY});
+  drawCell(doc,x+cOffEach,y+hRow1H,cOffEach,hRow2H,'HOURS TO BE PAID',{align:'center',bold:true,size:4.6,fill:HEADGREY});
+  drawCell(doc,x+cOffEach*2,y+hRow1H,cOffEach,hRow2H,'LAHA PAYABLE Y/N',{align:'center',bold:true,size:4.4,fill:HEADGREY});
   y += hRow1H+hRow2H;
 
   const rowH = 17;
-  LEAVE_TYPES.forEach(([key,label])=>{
+  const standardTypes = LEAVE_TYPES.filter(([key])=>key!=='other');
+  standardTypes.forEach(([key,label])=>{
     const row = l.leaveRows[key];
-    const shortLabel = label.split(' (Armed')[0];
     x = left;
-    drawCell(doc,x,y,c1,rowH,shortLabel,{align:'left',bold:true,size:6.3}); x+=c1;
+    drawCell(doc,x,y,c1,rowH,label,{align:'left',bold:true,size:6.3}); x+=c1;
     drawCell(doc,x,y,c2,rowH,fmtDateDDMMYYYY(row.first),{align:'center',size:7}); x+=c2;
     drawCell(doc,x,y,c3,rowH,fmtDateDDMMYYYY(row.last),{align:'center',size:7}); x+=c3;
     drawCell(doc,x,y,c4,rowH,fmtDateDDMMYYYY(row.returnDate),{align:'center',size:7}); x+=c4;
@@ -1576,69 +1586,150 @@ function buildLeavePdf(){
     y += rowH;
   });
 
-  doc.setFont(undefined,'italic'); doc.setFontSize(6); doc.setTextColor(...INK);
-  doc.text('Other (Armed Forces/Jury Duty): attach relevant documents separately.', left, y+8);
-  doc.text('To ensure RDOs aren\'t accumulated in line with the EBA, up to two (2) RDOs will be paid each R&R cycle. Max 10 RDOs accumulated. Extra work days must be approved before claiming the DIL. Your itinerary will be emailed to your nominated email address.', left, y+18, {maxWidth: right-left});
-  y += 34;
+  // OTHER row — merged with the explanatory bullet notes, matching how the
+  // real paper form reuses this row as a notes area rather than a separate block.
+  doc.setFontSize(6);
+  const noteW = c2+c3+c4+c5+cOff;
+  const bulletTexts = [
+    'To ensure RDOs aren\'t accumulated in line with the EBA, up to two (2) RDOs will be paid each R&R cycle (dependant on RDO balance). You may not accumulate more than 10 RDOs.',
+    'Extra work days are to be approved prior to claiming the DIL',
+    'Your itinerary will be emailed to your nominated email address',
+  ];
+  const bulletLines = bulletTexts.map(b=>doc.splitTextToSize(b, noteW-16));
+  let totalBulletLines = 0; bulletLines.forEach(ls=>totalBulletLines+=ls.length);
+  const otherRowH = Math.max(40, totalBulletLines*7 + bulletLines.length*3 + 10);
+  x = left;
+  drawCell(doc,x,y,c1,otherRowH,'',{});
+  doc.setFont(undefined,'bold'); doc.setFontSize(6.3); doc.setTextColor(...INK);
+  doc.text('OTHER', x+3, y+10);
+  doc.setFont(undefined,'normal'); doc.setFontSize(5.3);
+  doc.text(['(If Armed Forces/Jury','Duty please attach','relevant documents)'], x+3, y+19);
+  x += c1;
+  drawCell(doc,x,y,noteW,otherRowH,'',{});
+  doc.setFont(undefined,'normal'); doc.setFontSize(6);
+  let by = y+9;
+  bulletLines.forEach(lines=>{
+    doc.circle(x+6, by-2, 0.8, 'F');
+    doc.text(lines, x+11, by);
+    by += lines.length*7 + 3;
+  });
+  y += otherRowH + 12;
 
   doc.setFont(undefined,'bold'); doc.setFontSize(10.5); doc.setTextColor(...INK);
   doc.text('METHOD OF PAYMENT', left, y);
-  y += 12;
-  doc.setFont(undefined,'normal'); doc.setFontSize(8);
-  doc.text(`Selected: ${l.paymentMethod||'(not selected)'}`, left, y);
-  y += 20;
+  doc.setFont(undefined,'normal'); doc.setFontSize(7);
+  doc.text('(To be completed by employee — please tick one box)', left+122, y);
+  y += 10;
+
+  const boxGap = 20, boxW = (right-left-boxGap)/2, boxH = 32;
+  const drawPaymentBox = (bx, checked, text) => {
+    doc.setDrawColor(120,120,120); doc.setLineWidth(0.5);
+    doc.rect(bx, y, 9, 9, 'S');
+    if(checked){ doc.setFont(undefined,'bold'); doc.setFontSize(7.5); doc.text('X', bx+1.7, y+7.5); }
+    doc.setFont(undefined,'normal'); doc.setFontSize(6.8);
+    const lines = doc.splitTextToSize(text, bx+boxW-(bx+13));
+    doc.text(lines, bx+13, y+7);
+  };
+  drawPaymentBox(left, l.paymentMethod==='Pay in advance', 'Pay in advance — i.e. the pay day before the first day of leave OR at commencement of leave');
+  doc.setFont(undefined,'bold'); doc.setFontSize(7.5); doc.setTextColor(...INK);
+  doc.text('OR', left+boxW+boxGap/2, y+13, {align:'center'});
+  drawPaymentBox(left+boxW+boxGap, l.paymentMethod==='Pay as normal', 'Pay as normal — i.e. each pay day during period of leave');
+  y += boxH;
 
   doc.setFont(undefined,'bold'); doc.setFontSize(10.5);
   doc.text('2. TRAVEL', left, y);
   y += 14;
   doc.setFont(undefined,'bold'); doc.setFontSize(8.5);
   doc.text('A) AIR', left, y);
-  y += 12;
-  const halfW = (right-left-10)/2;
-  drawCell(doc,left,y,halfW,16,`Qantas FF #: ${l.qantasFF||''}`,{align:'left',size:7.5});
-  drawCell(doc,left+halfW+10,y,halfW,16,`Virgin Velocity #: ${l.virginVelocity||''}`,{align:'left',size:7.5});
-  y += 22;
+  y += 4;
+  doc.setFont(undefined,'italic'); doc.setFontSize(6);
+  doc.text('NCH will endeavour to book in line with your requirements but please note final flights will depend on operational requirements and flight cost.', left, y+7, {maxWidth: right-left});
+  y += 14;
 
-  const fc1=90,fc2=140,fc3=50,fc4=(right-left)-fc1-fc2-fc3;
-  doc.setFont(undefined,'bold'); doc.setFontSize(7);
-  doc.text('PREFERRED OUTWARD BOUND FLIGHT (travel from Hedland)', left, y); y+=6;
+  const fc1=90,fc2=140,fc3=50,fc4=(right-left)-fc1-fc2-fc3, officeW3=fc4/3;
+  const labelW=fc1+fc2, ffLabelW=70, ffValW=70, vLabelW=95, vValW=fc3+fc4-ffLabelW-ffValW-vLabelW;
+  x = left;
+  drawCell(doc,x,y,labelW,14,'PREFERRED OUTWARD BOUND FLIGHT (Travel FROM Hedland)',{align:'left',bold:true,size:6}); x+=labelW;
+  drawCell(doc,x,y,ffLabelW,14,'Qantas FF #',{align:'left',bold:true,size:6}); x+=ffLabelW;
+  drawCell(doc,x,y,ffValW,14,l.qantasFF||'',{align:'center',size:6.5}); x+=ffValW;
+  drawCell(doc,x,y,vLabelW,14,'Virgin Velocity #',{align:'left',bold:true,size:6}); x+=vLabelW;
+  drawCell(doc,x,y,vValW,14,l.virginVelocity||'',{align:'center',size:6.5});
+  y += 14;
   x=left;
   drawCell(doc,x,y,fc1,14,'DATE',{align:'center',bold:true,size:6,fill:HEADGREY}); x+=fc1;
   drawCell(doc,x,y,fc2,14,'DESTINATION',{align:'center',bold:true,size:6,fill:HEADGREY}); x+=fc2;
   drawCell(doc,x,y,fc3,14,'AM/PM',{align:'center',bold:true,size:6,fill:HEADGREY}); x+=fc3;
-  drawCell(doc,x,y,fc4,14,'OFFICE USE ONLY',{align:'center',bold:true,size:6,fill:HEADGREY});
+  drawCell(doc,x,y,fc4,7,'OFFICE USE ONLY',{align:'center',bold:true,size:5.3,fill:HEADGREY});
+  drawCell(doc,x,y+7,officeW3,7,'AIRLINE',{align:'center',bold:true,size:4.8,fill:HEADGREY});
+  drawCell(doc,x+officeW3,y+7,officeW3,7,'FLIGHT NO:',{align:'center',bold:true,size:4.8,fill:HEADGREY});
+  drawCell(doc,x+officeW3*2,y+7,officeW3,7,'DAY & TIME',{align:'center',bold:true,size:4.8,fill:HEADGREY});
   y+=14;
   x=left;
   drawCell(doc,x,y,fc1,15,fmtDateDDMMYYYY(l.outDate),{align:'center',size:7.5}); x+=fc1;
   drawCell(doc,x,y,fc2,15,l.outDestination||'',{align:'center',size:7.5}); x+=fc2;
   drawCell(doc,x,y,fc3,15,l.outAmPm||'',{align:'center',size:7.5}); x+=fc3;
-  drawCell(doc,x,y,fc4,15,'',{fill:GREY});
-  y+=23;
+  drawCell(doc,x,y,officeW3,15,'',{fill:GREY});
+  drawCell(doc,x+officeW3,y,officeW3,15,'',{fill:GREY});
+  drawCell(doc,x+officeW3*2,y,officeW3,15,'',{fill:GREY});
+  y+=20;
 
-  doc.setFont(undefined,'bold'); doc.setFontSize(7);
-  doc.text('PREFERRED INWARD BOUND FLIGHT (travel to Hedland)', left, y); y+=6;
+  x=left;
+  drawCell(doc,x,y,fc1+fc2+fc3+fc4,14,'PREFERRED INWARD BOUND FLIGHT (Travel TO Hedland)',{align:'left',bold:true,size:6.5});
+  y+=14;
   x=left;
   drawCell(doc,x,y,fc1,14,'DATE',{align:'center',bold:true,size:6,fill:HEADGREY}); x+=fc1;
   drawCell(doc,x,y,fc2,14,'DEPARTING FROM',{align:'center',bold:true,size:6,fill:HEADGREY}); x+=fc2;
   drawCell(doc,x,y,fc3,14,'AM/PM',{align:'center',bold:true,size:6,fill:HEADGREY}); x+=fc3;
-  drawCell(doc,x,y,fc4,14,'OFFICE USE ONLY',{align:'center',bold:true,size:6,fill:HEADGREY});
+  drawCell(doc,x,y,fc4,7,'OFFICE USE ONLY',{align:'center',bold:true,size:5.3,fill:HEADGREY});
+  drawCell(doc,x,y+7,officeW3,7,'AIRLINE',{align:'center',bold:true,size:4.8,fill:HEADGREY});
+  drawCell(doc,x+officeW3,y+7,officeW3,7,'FLIGHT NO:',{align:'center',bold:true,size:4.8,fill:HEADGREY});
+  drawCell(doc,x+officeW3*2,y+7,officeW3,7,'DAY & TIME',{align:'center',bold:true,size:4.8,fill:HEADGREY});
   y+=14;
   x=left;
   drawCell(doc,x,y,fc1,15,fmtDateDDMMYYYY(l.inDate),{align:'center',size:7.5}); x+=fc1;
   drawCell(doc,x,y,fc2,15,l.inDepartingFrom||'',{align:'center',size:7.5}); x+=fc2;
   drawCell(doc,x,y,fc3,15,l.inAmPm||'',{align:'center',size:7.5}); x+=fc3;
-  drawCell(doc,x,y,fc4,15,'',{fill:GREY});
-  y+=26;
+  drawCell(doc,x,y,officeW3,15,'',{fill:GREY});
+  drawCell(doc,x+officeW3,y,officeW3,15,'',{fill:GREY});
+  drawCell(doc,x+officeW3*2,y,officeW3,15,'',{fill:GREY});
+  y+=22;
 
   doc.setFont(undefined,'bold'); doc.setFontSize(8.5); doc.setTextColor(...INK);
-  doc.text('B) LAND BASED TRAVEL', left, y);
+  x = left;
+  doc.text('B) LAND BASED TRAVEL:', x, y); x += doc.getTextWidth('B) LAND BASED TRAVEL:') + 6;
+  doc.setFont(undefined, l.landTravel==='Yes' ? 'bold' : 'normal');
+  doc.text('YES', x, y);
+  if(l.landTravel==='Yes') doc.line(x, y+1.5, x+doc.getTextWidth('YES'), y+1.5);
+  x += doc.getTextWidth('YES') + 6;
+  doc.setFont(undefined,'normal'); doc.text('/', x, y); x += doc.getTextWidth('/') + 6;
+  doc.setFont(undefined, l.landTravel==='No' ? 'bold' : 'normal');
+  doc.text('NO', x, y);
+  if(l.landTravel==='No') doc.line(x, y+1.5, x+doc.getTextWidth('NO'), y+1.5);
   y += 12;
-  doc.setFont(undefined,'normal'); doc.setFontSize(7.5);
-  doc.text(`Making own arrangements: ${l.landTravel||'(not selected)'}${l.landTravel==='Yes' ? '  —  Destination: '+(l.landDestination||'') : ''}`, left, y);
+
+  doc.setFont(undefined,'normal'); doc.setFontSize(6.5); doc.setTextColor(...INK);
+  const introLines = doc.splitTextToSize('If you choose to make your own land-based travel arrangements you may be reimbursed a maximum of $850 per return journey (50% for one way) with prior approval. In order to be reimbursed you are required to:', right-left);
+  doc.text(introLines, left, y);
+  y += introLines.length*7.5 + 4;
+
+  doc.text('a)', left, y);
+  doc.text('Nominate your destination, being your place of residence:', left+12, y);
+  const destLabelW = doc.getTextWidth('Nominate your destination, being your place of residence:');
+  const destLineX1 = left+12+destLabelW+6;
+  doc.setDrawColor(...INK); doc.setLineWidth(0.5);
+  doc.line(destLineX1, y+1.5, right, y+1.5);
+  if(l.landTravel==='Yes' && l.landDestination) doc.text(l.landDestination, destLineX1+4, y-1.5);
   y += 10;
-  doc.setFont(undefined,'italic'); doc.setFontSize(6);
-  doc.text('Reimbursed max $850 per return journey (50% one way) with prior approval. Original itemised receipts required; Expense Reimbursement declaration to be completed on return.', left, y, {maxWidth: right-left});
-  y += 22;
+
+  const bLines = doc.splitTextToSize('Upon your return, provide original itemised invoices/receipts clearly showing place and date of purchase external to Port Hedland, with the exception of the first purchase for journey commencement; and', right-left-12);
+  doc.text('b)', left, y);
+  doc.text(bLines, left+12, y);
+  y += bLines.length*7.5 + 3;
+
+  const cLines = doc.splitTextToSize('Complete and sign an Expense Reimbursement declaration stating that all receipts were obtained for the purpose of travelling to and from your usual place of residence.', right-left-12);
+  doc.text('c)', left, y);
+  doc.text(cLines, left+12, y);
+  y += cLines.length*7.5 + 10;
 
   const sigRowH = 16, sigGap = 8;
   const dateX = left + 260, dateW = (right-left)-260;
