@@ -541,7 +541,12 @@ function renderTotals(){
   document.getElementById('sumSup').textContent = sup.toFixed(1);
 }
 
-document.getElementById('empName').addEventListener('input', e=>state.empName=e.target.value);
+document.getElementById('empName').addEventListener('input', e=>{
+  state.empName = e.target.value;
+  // print name is always the same person — keep it mirrored so there's one less box to fill in
+  state.empPrint = e.target.value;
+  document.getElementById('empPrint').value = e.target.value;
+});
 document.getElementById('position').addEventListener('change', e=>state.position=e.target.value);
 document.getElementById('weekEnding').addEventListener('input', e=>{
   state.weekEnding = e.target.value;
