@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norwest-timesheet-v40';
+const CACHE_NAME = 'norwest-timesheet-v41';
 const APP_SHELL = [
   './',
   './index.html',
@@ -10,11 +10,18 @@ const APP_SHELL = [
 ];
 
 // Cache the whole app shell (including the PDF library) the first time it's opened online,
-// so the app keeps working with no signal after that.
+// so the app keeps working with no signal after that. Each request is forced to bypass the
+// browser's own HTTP cache (cache.addAll alone can silently reuse a stale disk-cached copy
+// of index.html, since GitHub Pages serves everything with a 10-minute max-age) — otherwise
+// a "new" service worker version can still end up caching old content.
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(APP_SHELL))
+      .then(cache => Promise.all(APP_SHELL.map(url =>
+        fetch(url, {cache:'reload'}).then(response => {
+          if (response && response.status === 200) return cache.put(url, response);
+        })
+      )))
       .then(() => self.skipWaiting())
   );
 });
