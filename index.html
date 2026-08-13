@@ -1034,7 +1034,7 @@ checkForNewMonth();
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('./service-worker.js').then(reg=>{
+    navigator.serviceWorker.register('./service-worker.js', {updateViaCache:'none'}).then(reg=>{
       reg.update(); // check for a newer service-worker.js right away, don't wait for a manual reopen
     }).catch(()=>{});
   });
