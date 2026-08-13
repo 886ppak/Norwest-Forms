@@ -25,7 +25,7 @@
     0%,100%{ box-shadow:0 0 0 0 rgba(220,53,34,0); border-color:#333a48; }
     20%,60%{ box-shadow:0 0 0 4px rgba(220,53,34,0.55); border-color:#dc3522; }
   }
-  #weekEnding.flash-warn{ animation:flashRed 0.6s ease-in-out 2; }
+  #weekEnding.flash-warn, #position.flash-warn{ animation:flashRed 0.6s ease-in-out 2; }
   *{box-sizing:border-box}
   body{
     margin:0; background:var(--paper); color:var(--ink);
@@ -189,6 +189,7 @@
   </div>
   <div class="weekbar" style="margin-top:8px">
     <select id="position" style="flex:1; background:#1f2530; border:1px solid #333a48; color:#fff; border-radius:8px; padding:9px 10px; font-size:14px;">
+      <option value="">— Select —</option>
       <option value="Full time">Full time</option>
       <option value="Casual">Casual</option>
     </select>
@@ -311,21 +312,19 @@ function applyCompany(code){
   renderDay(); renderTabs(); renderTotals();
 }
 function chooseCompany(code){
-  const isFirstTime = !getCompany(); // before we overwrite it
   localStorage.setItem('norwestCompany', code);
   document.getElementById('companyGate').style.display = 'none';
-  // only set the default on first-ever setup — switching companies mid-fill
-  // shouldn't clobber a position the user already picked
-  if(isFirstTime){
-    state.position = code==='NWP' ? 'Casual' : 'Full time';
-    document.getElementById('position').value = state.position;
-  }
+  // Position always resets to blank and must be explicitly re-picked — someone might
+  // switch companies just to peek at the other form, and carrying over (or guessing) a
+  // default risks it staying wrong on their actual submission.
+  state.position = '';
+  document.getElementById('position').value = '';
   applyCompany(code);
 }
 function switchCompany(){
   const cur = getCompany();
   const next = cur==='NCH' ? 'NWP' : 'NCH';
-  if(confirm(`Switch to ${COMPANIES[next].label}? Anything you've already filled in stays as-is.`)){
+  if(confirm(`Switch to ${COMPANIES[next].label}? Anything you've already filled in stays as-is, except Position — you'll need to re-select it.`)){
     chooseCompany(next);
   }
 }
@@ -461,7 +460,7 @@ const FIELD_DEFS = [
 
 function defaultState(){
   return {
-    empName:'', weekEnding:'', empPrint:'', supPrint:'', position: getCompany()==='NWP' ? 'Casual' : 'Full time',
+    empName:'', weekEnding:'', empPrint:'', supPrint:'', position:'',
     days: DAYS.map(()=>({date:'',start:'',finish:'',lunch:'',nsStand:'',leave:'',fifo:'',
       travelOwn:'',siteAllow:'',leadHand:'',supAllow:'',higherDuties:'',laha:'',truckOvernight:'',notes:'',
       jobs:[0,1,2].map(()=>({no:'',client:'',hours:''}))}))
@@ -1323,6 +1322,16 @@ function validateRequiredFields(actionLabel){
   if(!state.weekEnding){
     flashWeekEnding(`Please set the Week Ending date before ${actionLabel}`);
     document.getElementById('weekEnding').scrollIntoView({behavior:'smooth', block:'center'});
+    return false;
+  }
+  if(!state.position){
+    const posEl = document.getElementById('position');
+    showToast(`Please select Full time or Casual before ${actionLabel}`);
+    posEl.scrollIntoView({behavior:'smooth', block:'center'});
+    posEl.classList.remove('flash-warn');
+    void posEl.offsetWidth;
+    posEl.classList.add('flash-warn');
+    setTimeout(()=> posEl.classList.remove('flash-warn'), 1300);
     return false;
   }
   if(isCanvasBlank('empSig')){
