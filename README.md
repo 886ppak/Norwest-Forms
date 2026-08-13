@@ -6,7 +6,7 @@ it out and sign it on their phone, the app generates a PDF that closely
 matches the original company form, and it's shared straight to
 `admin@norwestcranehire.com.au`.
 
-**Live app:** https://886ppak.github.io/nch-fulltime-timesheet/
+**Live app:** https://886ppak.github.io/Norwest-Timesheet/
 
 ## Features
 
@@ -27,7 +27,7 @@ matches the original company form, and it's shared straight to
 
 ## Usage
 
-Just open the [live app](https://886ppak.github.io/nch-fulltime-timesheet/)
+Just open the [live app](https://886ppak.github.io/Norwest-Timesheet/)
 in a mobile browser and, when prompted, install it to your home screen for
 the best experience. No account or login required.
 
