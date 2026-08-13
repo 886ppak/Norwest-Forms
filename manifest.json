@@ -1,6 +1,6 @@
 {
-  "name": "Norwest Crane Hire - Weekly Timesheet",
-  "short_name": "Timesheet",
+  "name": "Norwest-forms",
+  "short_name": "Norwest-forms",
   "description": "Fill, generate, and send your weekly timesheet",
   "start_url": "./index.html",
   "scope": "./",
