@@ -1,10 +1,15 @@
-# Norwest Crane Hire — Weekly Timesheet PWA
+# Norwest Forms — Timesheet & Leave PWA
 
-A single-page Progressive Web App that replaces the paper/PDF weekly
-timesheet (**NCH-HR-FORM-025**) used by Norwest Crane Hire. Employees fill
-it out and sign it on their phone, the app generates a PDF that closely
-matches the original company form, and it's shared straight to
-`admin@norwestcranehire.com.au`.
+A single-page Progressive Web App that replaces paper/PDF forms for
+**Norwest Crane Hire (NCH)** and **Norwest Personnel (NWP)**. Employees pick
+their company, fill out the form and sign it on their phone, the app
+generates a PDF that closely matches the original company form, and it's
+shared straight to the right admin inbox for that company.
+
+Covers three forms:
+- NCH weekly timesheet (**NCH-HR-FORM-025**) → `admin@norwestcranehire.com.au`
+- NWP weekly timesheet (**NP-HR-FRM-001**) → `payroll@norwestpersonnel.com.au`
+- NCH leave/R&R/travel application (**NCH-HR-FORM-002**) → `admin@norwestcranehire.com.au`
 
 **Live app:** https://886ppak.github.io/Norwest-Forms/
 
@@ -12,14 +17,19 @@ matches the original company form, and it's shared straight to
 
 - 📱 **Installable PWA** — add to home screen, works fully offline after
   the first load (service worker caches the app shell + PDF library).
+- 🏢 **Company-aware** — a first-open picker (NCH or NWP) drives which
+  timesheet layout, logo, and admin email get used; switchable anytime.
 - 🗓️ **Auto-filled week** — pick a "Week Ending" date and all 7 daily dates
   populate automatically.
 - 🔢 **Job number lookup** — selecting a client auto-fills the correct job
   number for that month from a live company spreadsheet.
 - ✍️ **On-screen signature** — required before you can download or submit.
 - 📄 **PDF generation** — produces a PDF that closely replicates the
-  original paper form, including job details, daily hour totals, leave
-  legend, and allowance calculations.
+  original paper form for whichever company/form is active, including job
+  details, daily hour totals, allowance calculations, and (for NWP) the
+  Higher Duties/Leading Hand/Heavy Rigging/Meal allowance section.
+- 🌴 **Leave Application** — a separate tab for the NCH leave/R&R/travel form,
+  shared by both companies since there's no separate NWP version.
 - 📤 **One-tap submit** — uses the Web Share API to hand the finished PDF
   straight to your phone's Gmail app, ready to send.
 - 🔁 **Start new week** — resets the timesheet for the next week while
@@ -81,7 +91,7 @@ publishes the live site directly.
 
 ## Contributing
 
-This is a small, purpose-built internal tool for Norwest Crane Hire.
-See [`PROJECT_CONTEXT.md`](./PROJECT_CONTEXT.md) for implementation notes,
-business-logic details, and things that shouldn't be changed without
-checking first — read it before submitting changes.
+This is a small, purpose-built internal tool for Norwest Crane Hire and
+Norwest Personnel. See [`PROJECT_CONTEXT.md`](./PROJECT_CONTEXT.md) for
+implementation notes, business-logic details, and things that shouldn't be
+changed without checking first — read it before submitting changes.
