@@ -95,3 +95,9 @@ This is a small, purpose-built internal tool for Norwest Crane Hire and
 Norwest Personnel. See [`PROJECT_CONTEXT.md`](./PROJECT_CONTEXT.md) for
 implementation notes, business-logic details, and things that shouldn't be
 changed without checking first — read it before submitting changes.
+
+## License
+
+All rights reserved — see [`LICENSE`](./LICENSE). This code is not
+open source; it's published here for hosting purposes only. No permission
+is granted to copy, reuse, or redistribute it.
