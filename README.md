@@ -24,6 +24,9 @@ Covers three forms:
 - 🔢 **Job number lookup** — selecting a client auto-fills the correct job
   number for that month from a live company spreadsheet.
 - ✍️ **On-screen signature** — required before you can download or submit.
+- 💾 **Autosaves as you go** — fill in Monday, close the tab, come back
+  Friday and pick up right where you left off (works the same whether it's
+  installed or just open in the browser).
 - 📄 **PDF generation** — produces a PDF that closely replicates the
   original paper form for whichever company/form is active, including job
   details, daily hour totals, allowance calculations, and (for NWP) the

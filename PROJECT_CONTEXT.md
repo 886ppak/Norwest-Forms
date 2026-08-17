@@ -47,6 +47,21 @@ logos are embedded as base64 PNG constants — `LOGO_PNG_B64` (NCH) and
 it doesn't reintroduce padding, since a padded image throws off the
 precisely-measured `logoX/logoY/logoW/logoH` placement in `buildPdfNWP()`.
 
+**Draft persistence.** The in-progress timesheet (`state`) and leave form
+(`leaveState`), including both signature canvases, autosave to `localStorage`
+(`norwestTimesheetDraft`, `norwestLeaveDraft`, `norwestEmpSigDraft`,
+`norwestSupSigDraft`, `norwestLeaveSigDraft`) and restore on load — so
+filling in Monday and coming back Friday actually works, even if the tab/PWA
+gets killed in between. Saving is debounced (`scheduleDraftSave()`) and
+triggered by one delegated `input`/`change` listener on `document` (every
+field in both forms bubbles into it, so new fields get autosave for free)
+plus explicit calls at the handful of mutation points that don't fire a
+native input event (`clearForm()`/`undoClear()`, `clearSig()`,
+`copyFromPreviousDay()`, `addJob()`, `chooseCompany()`, and signature-pad
+strokes via `end()` in `setupSig()`). `leaveSig`'s canvas is only sized
+once the Leave tab is first shown (`leaveSigReady` in `switchFormTab()`),
+so its draft is restored there rather than at boot.
+
 **Total Daily Hours / Total Work Hours** (both companies) is calculated
 from the sum of that day's Job Hours entries (`calcDailyHours()`), NOT from
 Start/Finish time. Start/Finish/Lunch are purely informational — the
