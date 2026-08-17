@@ -35,8 +35,12 @@ Covers three forms:
   shared by both companies since there's no separate NWP version.
 - 📤 **One-tap submit** — uses the Web Share API to hand the finished PDF
   straight to your phone's Gmail app, ready to send.
-- 🔁 **Start new week** — resets the timesheet for the next week while
-  keeping your name and signature saved.
+- 🔁 **Start new week / Clear leave form** — resets the timesheet or leave
+  form for a fresh submission while keeping your name, signature, and (for
+  the leave form) your frequent flyer numbers saved.
+- 📅 **Smart leave day counting** — leave day totals count weekdays only
+  and skip WA public holidays by default (toggleable), except R&R which
+  always counts calendar days.
 
 ## Usage
 

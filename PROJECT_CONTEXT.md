@@ -89,6 +89,24 @@ September date — this business is Hedland-based (see the leave form's
 "travel from Hedland" flight section) — don't swap this back to the
 statewide date without checking with the business first.
 
+`WA_HOLIDAYS_MAX_YEAR` tracks the last confirmed year in the set above —
+bump it whenever a new year's dates are added. `warnIfHolidaysStale()`
+checks a leave row's `last` date against it and toasts a warning (rather
+than silently falling back to weekend-only exclusion with no explanation)
+once someone actually enters a date past the years we've got loaded — this
+is the real safety net for the list going stale, not just the comment
+above, since nobody needs to remember a year-plus ahead of time for it to
+still work correctly for users.
+
+**Clearing the leave form.** `clearLeaveForm()` (button in `leaveView`,
+mirrors `clearForm()`'s "Start new week") resets `leaveState` to
+`defaultLeaveState()` but keeps `empName`/`position`/`empNo`/`qantasFF`/
+`virginVelocity` and leaves the `leaveSig` canvas untouched — same "keep
+identity, clear the rest" idea as the timesheet's clear. Both clear
+buttons share one `undoBar`/`showToast` pair; a shared `undoTarget`
+variable plus `runUndo()` route the bar's Undo button to `undoClear()` or
+`undoClearLeave()` depending on which form was last cleared.
+
 **Total Daily Hours / Total Work Hours** (both companies) is calculated
 from the sum of that day's Job Hours entries (`calcDailyHours()`), NOT from
 Start/Finish time. Start/Finish/Lunch are purely informational — the
