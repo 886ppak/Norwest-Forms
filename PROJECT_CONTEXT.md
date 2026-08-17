@@ -62,6 +62,33 @@ strokes via `end()` in `setupSig()`). `leaveSig`'s canvas is only sized
 once the Leave tab is first shown (`leaveSigReady` in `switchFormTab()`),
 so its draft is restored there rather than at boot.
 
+**Leave form "Total days requested" calculation.** `daysBetween()` counts
+plain calendar days, inclusive of both the first and last day (e.g.
+Thu-Mon is 5, not 4) — this is what R&R always uses, since it's
+rostered/FIFO-based, not tied to a Mon-Fri work week.
+
+Every other leave type (RDO, Annual Leave, Personal/Cultural, LWOP, DIL,
+Other) defaults to `countBusinessDays()` instead — Mon-Fri only, excluding
+`WA_PUBLIC_HOLIDAYS` — because this crew's contracted working days are
+Monday-Friday and public holidays don't need leave applied for them. This
+is user-toggleable per submission via the "Count only weekdays, excluding
+WA public holidays" checkbox in the Leave and R&R card
+(`leaveState.excludeWeekendsHolidays`, default `true`); `calcLeaveDays(key,
+first, last)` is the single entry point that picks the right function based
+on the leave type key and that toggle — route any future changes to total-
+days logic through it rather than calling `daysBetween`/`countBusinessDays`
+directly.
+
+`WA_PUBLIC_HOLIDAYS` is a hardcoded set of ISO dates sourced from
+wa.gov.au, confirmed for 2026-2027 only (as of Aug 2026) — **needs a manual
+top-up for 2028 onward**, and the 2027 King's Birthday date is a computed
+guess (first Monday in August) pending official gazettal, so double-check
+it closer to the date. It deliberately uses the **Port Hedland/Karratha**
+regional King's Birthday date (first Monday in August), not the statewide
+September date — this business is Hedland-based (see the leave form's
+"travel from Hedland" flight section) — don't swap this back to the
+statewide date without checking with the business first.
+
 **Total Daily Hours / Total Work Hours** (both companies) is calculated
 from the sum of that day's Job Hours entries (`calcDailyHours()`), NOT from
 Start/Finish time. Start/Finish/Lunch are purely informational — the
