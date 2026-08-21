@@ -47,6 +47,18 @@ logos are embedded as base64 PNG constants — `LOGO_PNG_B64` (NCH) and
 it doesn't reintroduce padding, since a padded image throws off the
 precisely-measured `logoX/logoY/logoW/logoH` placement in `buildPdfNWP()`.
 
+**manifest.json has no `orientation` field — keep it that way.** Setting it
+(e.g. `"portrait"`) locks the *installed* app (not browser tabs) to that
+orientation on Android, and on any screen/orientation that doesn't match,
+the WebAPK letterboxes the app with a blurred, scaled-up copy of the icon
+instead of stretching content to fill the screen — this bit a real user on
+a tablet. If this field ever gets re-added, know that fixing it isn't as
+simple as a normal deploy: Android bakes the orientation lock into the
+installed WebAPK package at install time, not just cached page content, so
+existing installs need to be uninstalled from Android Settings → Apps
+(not just removed from the home screen) before reinstalling picks up the
+fix — a plain refresh or "reinstall from the home screen" won't do it.
+
 **Draft persistence.** The in-progress timesheet (`state`) and leave form
 (`leaveState`), including both signature canvases, autosave to `localStorage`
 (`norwestTimesheetDraft`, `norwestLeaveDraft`, `norwestEmpSigDraft`,
