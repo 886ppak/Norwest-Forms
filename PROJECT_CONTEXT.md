@@ -180,9 +180,10 @@ via `JOB_NUMBERS_URL` (a deployed Apps Script web app). `CLIENT_SITE_MAP`
 maps dropdown values to the *exact* sheet column names — note it's `'Port
 Hedland'` (with a space) not `'Porthedland'`, because that's what the
 user's Gmail-parsing Apps Script actually writes as the header. If this
-ever breaks again, check for an exact string mismatch here first. Shared
-by both companies; the `CLIENTS` dropdown list is filtered per company
-(NWP excludes `'NCH FLIGHTS'`).
+ever breaks again, check for an exact string mismatch here first. The
+`CLIENTS` dropdown list is identical for both companies — NWP used to
+filter out `'NCH FLIGHTS'` but that was removed per user request, so don't
+reintroduce a per-company filter here without checking first.
 
 **Week Ending date auto-fills all 7 day dates** (`populateWeekDates()` /
 `isoAddDays()`). This uses manual UTC-safe date arithmetic
