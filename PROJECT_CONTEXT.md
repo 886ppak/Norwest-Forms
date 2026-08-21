@@ -119,6 +119,38 @@ buttons share one `undoBar`/`showToast` pair; a shared `undoTarget`
 variable plus `runUndo()` route the bar's Undo button to `undoClear()` or
 `undoClearLeave()` depending on which form was last cleared.
 
+**NWP's "Position" box is an EBA classification, not a job title.** Unlike
+NCH (which just uses the shared `state.position` Full time/Casual select,
+header UI `#positionNCH`), NWP's real form's Position box holds a code like
+`CO CAT 5 LV2 CASUAL` — role + category + level + employment type, sourced
+from the NWP Enterprise Agreement's Appendix A/B wage schedule. UI is
+`#positionNWP` (four selects: `#nwpRole`, `#nwpCategory`, `#nwpLevel`,
+`#nwpEmployment`), toggled against `#positionNCH` by `applyCompany()`
+alongside the logo swap. `NWP_ROLE_CATEGORIES` maps each role to its valid
+categories (DG/MC → Cat 1, CN/RB → Cat 2, RI/RA → Cat 3, CO → Cat 3-7) —
+changing the role clears and rebuilds the category options via
+`updateNwpCategoryOptions()`, since a category valid for one role usually
+isn't valid for another. `buildNwpPositionString()` composes the final
+string (uppercased employment type, e.g. "CASUAL"/"FULL TIME", defaulting
+to Casual) and is what actually gets printed into `buildPdfNWP()`'s
+Position cell — not `state.position`, which stays NCH-only. Like the NWP
+position fields, `state.nwpRole/nwpCategory/nwpLevel/nwpEmployment` persist
+through `clearForm()` same as `empName` (see its keep-list) since someone's
+classification doesn't change week to week; `chooseCompany()` doesn't touch
+them either. `validateRequiredFields()` branches on `getCompany()` to
+require the three NWP selects instead of `state.position` before
+submit/download.
+
+**The timesheet and leave actionbars each have their own admin-email
+hint** (`#timesheetHintEmail` in `#timesheetActionbar`, and a plain
+hardcoded `<b>` in `#leaveActionbar` that's always `opsadmin@norwestcranehire.com.au`
+regardless of company — leave applications go to NCH either way). Use the
+specific ID, not a generic `.actionbar .hint b` selector — that used to
+grab whichever one appears first in the DOM (the leave one), silently
+leaving the timesheet's hint stuck on its initial hardcoded value and
+wrongly overwriting the leave one's fixed address. Found and fixed
+alongside the NWP position work below.
+
 **Total Daily Hours / Total Work Hours** (both companies) is calculated
 from the sum of that day's Job Hours entries (`calcDailyHours()`), NOT from
 Start/Finish time. Start/Finish/Lunch are purely informational — the
