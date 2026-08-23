@@ -127,18 +127,28 @@ from the NWP Enterprise Agreement's Appendix A/B wage schedule. UI is
 `#positionNWP` (four selects: `#nwpRole`, `#nwpCategory`, `#nwpLevel`,
 `#nwpEmployment`), toggled against `#positionNCH` by `applyCompany()`
 alongside the logo swap. `NWP_ROLE_CATEGORIES` maps each role to its valid
-categories (DG/MC → Cat 1, CN/RB → Cat 2, RI/RA → Cat 3, CO → Cat 3-7) —
-changing the role clears and rebuilds the category options via
-`updateNwpCategoryOptions()`, since a category valid for one role usually
-isn't valid for another. `buildNwpPositionString()` composes the final
-string (uppercased employment type, e.g. "CASUAL"/"FULL TIME", defaulting
-to Casual) and is what actually gets printed into `buildPdfNWP()`'s
-Position cell — not `state.position`, which stays NCH-only. Like the NWP
+categories (DG/MC → Cat 1, CN/RB → Cat 2, RI/RA → Cat 3, CO → Cat 3-7,
+**SUPERVISOR → `[]`**) — changing the role clears and rebuilds the category
+options via `updateNwpCategoryOptions()`, since a category valid for one
+role usually isn't valid for another. Supervisor sits outside the EBA
+crane/rigger wage schedule entirely, so it has no CAT or LV at all —
+`updateNwpCategoryOptions()` detects an empty category list (`hasStructure`
+check) and disables both `#nwpCategory` (shown as a single "N/A" option)
+and `#nwpLevel`, and the role-change handler also clears `state.nwpLevel`
+when switching to a no-structure role. Any future role with no category
+structure should map to `[]` the same way, not be special-cased by name.
+`buildNwpPositionString()` mirrors this — for a no-structure role it omits
+the "CAT x LVy" segment entirely (e.g. "SUPERVISOR CASUAL" instead of
+"CO CAT 5 LV2 CASUAL") — and uppercases the employment type ("CASUAL"/
+"FULL TIME", defaulting to Casual). That's what actually gets printed into
+`buildPdfNWP()`'s Position cell — not `state.position`, which stays
+NCH-only. Like the NWP
 position fields, `state.nwpRole/nwpCategory/nwpLevel/nwpEmployment` persist
 through `clearForm()` same as `empName` (see its keep-list) since someone's
 classification doesn't change week to week; `chooseCompany()` doesn't touch
 them either. `validateRequiredFields()` branches on `getCompany()` to
-require the three NWP selects instead of `state.position` before
+require `nwpRole` (plus `nwpCategory`/`nwpLevel` only if that role actually
+has a category structure) instead of `state.position` before
 submit/download.
 
 **The timesheet and leave actionbars each have their own admin-email
