@@ -151,6 +151,13 @@ require `nwpRole` (plus `nwpCategory`/`nwpLevel` only if that role actually
 has a category structure) instead of `state.position` before
 submit/download.
 
+**Email subject tags** (`submitTimesheet()`'s `subjectTags` array) flag
+things the admin should notice at a glance: Leading Hand/Supervisor
+Allowance and Higher Duties (both companies, day-level fields), plus
+`'Supervisor'` when NWP's Position role is Supervisor (`state.nwpRole===
+'SUPERVISOR'`) — a separate check since that's a one-time role pick, not a
+per-day field like the others.
+
 **The timesheet and leave actionbars each have their own admin-email
 hint** (`#timesheetHintEmail` in `#timesheetActionbar`, and a plain
 hardcoded `<b>` in `#leaveActionbar` that's always `opsadmin@norwestcranehire.com.au`
