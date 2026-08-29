@@ -6,10 +6,12 @@ their company, fill out the form and sign it on their phone, the app
 generates a PDF that closely matches the original company form, and it's
 shared straight to the right admin inbox for that company.
 
-Covers three forms:
+Covers five forms:
 - NCH weekly timesheet (**NCH-HR-FORM-025**) → `admin@norwestcranehire.com.au`
 - NWP weekly timesheet (**NP-HR-FRM-001**) → `payroll@norwestpersonnel.com.au`
 - NCH leave/R&R/travel application (**NCH-HR-FORM-002**) → `admin@norwestcranehire.com.au`
+- NWP Training Payment Claim (**NP-HR-FRM-004**) → `hr@norwestpersonnel.com.au`
+- NWP Medical & D&A Allowance Claim (**NP-ADM-FOR-003**) → `hr@norwestpersonnel.com.au`
 
 **Live app:** https://886ppak.github.io/Norwest-Forms/
 
@@ -33,6 +35,8 @@ Covers three forms:
   Higher Duties/Leading Hand/Heavy Rigging/Meal allowance section.
 - 🌴 **Leave Application** — a separate tab for the NCH leave/R&R/travel form,
   shared by both companies since there's no separate NWP version.
+- 🎓 **NWP Training & Medical/D&A claim forms** — two extra tabs, NWP only,
+  for the Training Payment Claim and Medical/D&A Allowance Claim forms.
 - 📤 **One-tap submit** — uses the Web Share API to hand the finished PDF
   straight to your phone's Gmail app, ready to send.
 - 🔁 **Start new week / Clear leave form** — resets the timesheet or leave

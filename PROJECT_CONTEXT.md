@@ -1,11 +1,13 @@
 # Norwest Forms — Timesheet & Leave PWA
 
 ## What this is
-A single-page PWA covering three paper/PDF forms for two companies:
+A single-page PWA covering five paper/PDF forms across two companies:
 - **NCH weekly timesheet** (NCH-HR-FORM-025) for Norwest Crane Hire
 - **NWP weekly timesheet** (NP-HR-FRM-001) for Norwest Personnel
 - **NCH leave/R&R/travel application** (NCH-HR-FORM-002, page 1 only — shared
   by both companies since there's no separate NWP leave form)
+- **NWP Training Payment Claim** (NP-HR-FRM-004) — NWP-only
+- **NWP Medical & D&A Allowance Claim** (NP-ADM-FOR-003) — NWP-only
 
 Employees pick their company on first open (`#companyGate` /
 `chooseCompany()` / `applyCompany()`), fill the relevant form on their
@@ -118,6 +120,44 @@ identity, clear the rest" idea as the timesheet's clear. Both clear
 buttons share one `undoBar`/`showToast` pair; a shared `undoTarget`
 variable plus `runUndo()` route the bar's Undo button to `undoClear()` or
 `undoClearLeave()` depending on which form was last cleared.
+
+**Training Payment Claim and Medical/D&A Allowance Claim are NWP-only
+forms**, unlike Leave which both companies share. Same overall pattern as
+Leave (`trainingState`/`medicalState`, `renderTrainingView()`/
+`renderMedicalView()`, `buildTrainingPdf()`/`buildMedicalPdf()`,
+`clearTrainingForm()`/`clearMedicalForm()` + their own undo pair wired into
+the same shared `undoTarget`/`runUndo()`, own signature canvases
+`trainingSig`/`medicalSig` with the same lazy-setup-on-first-tab-view
+pattern as `leaveSig`, own draft keys in `saveDraft()`/`loadDraft()`), but
+with real differences worth knowing:
+- Their tabs (`.nwpOnlyTab` in the `formTabs` bar) are hidden entirely for
+  NCH and only shown by `applyCompany()` alongside the logo/position swap.
+  `activeFormTab` tracks which tab is showing; if someone's sitting on
+  Training or Medical and switches to NCH, `applyCompany()` bounces them
+  back to the timesheet tab rather than leaving them stranded on a
+  now-hidden one.
+- Both send to `hr@norwestpersonnel.com.au` (via the shared
+  `submitClaimPdf()` helper), not either company's usual admin address —
+  don't route these through `COMPANIES[...].adminEmail`.
+- Each Employee Declaration checkbox is **required** before submit/download
+  (`validateTrainingRequiredFields()`/`validateMedicalRequiredFields()`
+  check every `declare*` flag) — this was a deliberate call since they're
+  literal attestations on the real form, not optional notes; revisit if
+  that turns out to be too strict for a real submission.
+- Both PDFs skip the real forms' "Office Use Only" HR-approval section
+  entirely (same "employee-facing page only" scope as the Leave PDF) and
+  use a shared `drawClaimIdRow()`/`drawClaimTitleAndLogo()`/
+  `drawClaimSigAndFooter()`/`drawDeclarationLines()` set of helpers rather
+  than measuring each one to the same 300dpi-pixel-perfect standard as the
+  two timesheets — layout is faithful but eyeballed/proportioned from the
+  reference PDFs, not exactly measured. `drawClaimTitleAndLogo()` shrinks
+  the title font until it clears the logo rather than overlapping it,
+  since the Medical form's title is long enough to collide with it at a
+  fixed size — a real bug caught in testing, not a hypothetical.
+- The Employee Signature row's Date cell auto-fills with today's date at
+  PDF-generation time (there's no separate date input in either form) —
+  intentional, matching the "auto-fill wherever sensible" pattern used
+  elsewhere (job numbers, week dates).
 
 **NWP's "Position" box is an EBA classification, not a job title.** Unlike
 NCH (which just uses the shared `state.position` Full time/Casual select,
