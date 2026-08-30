@@ -327,17 +327,27 @@ change — user-facing scheme is `v1` → `v1.1`...`v1.10` → `v2`, and so on.
 
 ## Backend automation (separate from this repo)
 A Google Apps Script project ("Job Numbers API") handles the monthly job
-number sync:
+number sync. **It lives in a different Google account than the one you're
+normally signed into — it's held under aiden.tunupopo's account, not
+yours.** To open script.google.com and actually see/edit it, use an
+incognito/private window and sign in as that account (or switch accounts
+in a regular window) — trying to reach it while signed into your own
+Google account elsewhere in the same browser session won't show it.
 - `doGet()` — serves the JobNumbers sheet as JSON to the PWA. Don't touch
   this without understanding it's a live API endpoint other code depends on.
-- `processJobNumberEmails()` — runs on a daily time-driven trigger, reads
-  Gmail threads labeled "Process-JobNumbers" (auto-applied via a Gmail
-  filter when Norwest's monthly email arrives), regex-extracts the Port
-  Hedland/Newman/Flights/Logistics job numbers, writes/updates a row in the
-  JobNumbers sheet, then removes the label. Regex patterns were built and
-  tested against the real email wording — don't loosen them without testing
-  against actual email text, since earlier looser versions grabbed stray
-  words like "NCH" or "Operations" instead of the numbers.
+- `processJobNumberEmails()` — reads Gmail threads labeled
+  "Process-JobNumbers" (auto-applied via a Gmail filter when Norwest's
+  monthly email arrives), regex-extracts the Port Hedland/Newman/Flights/
+  Logistics job numbers, writes/updates a row in the JobNumbers sheet, then
+  removes the label. The function itself contains no
+  `ScriptApp.newTrigger(...)` call, so its run frequency isn't visible in
+  the code at all — it's whatever time-driven trigger is configured on the
+  Apps Script project's Triggers page (the clock icon in the editor sidebar).
+  Don't assume a specific interval without checking there first. Regex
+  patterns were built and tested against the real email wording — don't
+  loosen them without testing against actual email text, since earlier
+  looser versions grabbed stray words like "NCH" or "Operations" instead
+  of the numbers.
 
 ## Hosting
 Static GitHub Pages, repo root. No backend of our own — the Apps Script web
