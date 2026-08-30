@@ -251,6 +251,22 @@ serializing via `toISOString()` silently shifts the date back a day.
 Keep all date math UTC-based. Applies to the timesheet's week only — the
 leave form's dates are simple single-date pickers, no cascading fill.
 
+**The per-day "Date" field in `renderDay()` is a plain readonly text
+input, not `type="date"`** — deliberately. It's purely a display of
+`state.days[i].date` (clicking it just flashes the Week Ending reminder;
+it was never actually editable), and a native `<input type="date">` here
+hit a real bug: its displayed format is governed by the browser/OS locale,
+and recreating one repeatedly via `innerHTML` (which happens on every
+`setDay()` tab switch) triggered inconsistent locale detection on at least
+one Android WebView — the first day shown would render dd/mm/yyyy
+correctly and every day after would silently flip to mm/dd/yyyy, despite
+the underlying value being identical in shape for all 7 days. Rendering it
+as plain text via `fmtDateDDMMYYYY()` sidesteps the whole class of bug by
+never depending on locale-driven native date-input rendering at all. Don't
+change this back to `type="date"` for a field that's just showing a
+computed value, non-editable — use plain text for any future read-only
+date display in this app for the same reason.
+
 **Signature requirements**: employee signature (`empSig`) is mandatory
 before Download or Submit on the timesheet, for both companies, validated
 via canvas pixel-alpha check (`isCanvasBlank()`, see
