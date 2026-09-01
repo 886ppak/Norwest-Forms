@@ -325,6 +325,20 @@ There's also a small in-app version label (`.appVersion`, top-left of the
 sticky banner) that should be bumped alongside `CACHE_NAME` on every
 change — user-facing scheme is `v1` → `v1.1`...`v1.10` → `v2`, and so on.
 
+**Job client dropdown's "Other (type manually)" option needs its own
+`otherClient` flag on the job object** (`{no,client,hours,otherClient}`)
+— don't try to infer "is this Other?" from `j.client` being non-empty and
+not in `CLIENTS`, the way it briefly was. Selecting "Other" sets
+`client=''` (there's genuinely nothing typed yet), and without a separate
+flag, the very next re-render sees an empty falsy `client` and can't tell
+"Other, not yet typed" apart from "nothing selected" — it silently
+reverts the dropdown to blank and never renders the manual-entry text
+input at all, so there's no way to type a custom client name. This was a
+real bug (found via user report), not hypothetical. The leave form's
+`cityDropdownField()`/`wireCityDropdown()` already had this right via its
+own `otherFlag` — the job-client dropdown just never followed the same
+pattern. Keep both in sync if either changes.
+
 ## Backend automation (separate from this repo)
 A Google Apps Script project ("Job Numbers API") handles the monthly job
 number sync. **It lives in a different Google account than the one you're
