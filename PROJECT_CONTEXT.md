@@ -159,15 +159,27 @@ with real differences worth knowing:
   checkbox pair instead — everything else (NWP/HR Declaration checkboxes,
   the Approver Name/Signature/Date row, Conditions of Payment numbered
   list) is passed in via `officeUseOpts` and rendered by the same shared
-  code for both forms. Uses a shared `drawClaimIdRow()`/
+  code for both forms via a shared `drawClaimIdRow()`/
   `drawClaimTitleAndLogo()`/`drawClaimSigAndFooter()`/
-  `drawDeclarationLines()`/`drawOfficeUseOnly()` set of helpers rather
-  than measuring each one to the same 300dpi-pixel-perfect standard as the
-  two timesheets — layout is faithful but eyeballed/proportioned from the
-  reference PDFs, not exactly measured. `drawClaimTitleAndLogo()` shrinks
-  the title font until it clears the logo rather than overlapping it,
-  since the Medical form's title is long enough to collide with it at a
-  fixed size — a real bug caught in testing, not a hypothetical.
+  `drawDeclarationLines()`/`drawOfficeUseOnly()` set of helpers. As of the
+  second pass on these two forms, every margin, cell width/height, font
+  size, and shading color in this set was pixel-measured directly off the
+  two real reference PDFs (NP-HR-FRM-004, NP-ADM-FOR-003) via PyMuPDF
+  vector/text extraction (`page.get_drawings()` for fill rects,
+  `page.get_text('dict')` for exact text-span bboxes/sizes/fonts) — same
+  rigor as `buildPdfNWP()`, not eyeballed. Two shading tones are used,
+  `CLAIM_GREY1`/`CLAIM_GREY2`; the Office Use Only section's outer box is
+  drawn as its own filled rect (`drawOfficeUseOnly()`'s `opts.boxHeight`,
+  a hardcoded measured height since the section's content is always the
+  same fixed blank layout) that deliberately overhangs the main content
+  margins on both sides, matching the reference. `drawClaimTitleAndLogo()`
+  still shrinks the title font until it clears the logo rather than
+  overlapping it — the reference PDFs' title text runs visually under
+  their logo's transparent margin at a fixed 14pt, but this app's
+  `LOGO_PNG_B64_NWP` asset has no such safe margin, so the Medical form's
+  long title needs the shrink to avoid a real visual collision (caught in
+  testing, not hypothetical) — don't remove this shrink loop even though
+  the reference itself doesn't need one.
 - The Employee Signature row's Date cell auto-fills with today's date at
   PDF-generation time (there's no separate date input in either form) —
   intentional, matching the "auto-fill wherever sensible" pattern used
