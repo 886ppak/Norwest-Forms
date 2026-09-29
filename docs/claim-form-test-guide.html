@@ -238,6 +238,53 @@
     border:1.5px solid var(--good);
   }
 
+  .compare{
+    display:flex;
+    flex-direction:column;
+    gap:20px;
+  }
+  .compare figure{
+    margin:0;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:10px 10px 14px;
+  }
+  .compare img{
+    display:block;
+    width:100%;
+    height:auto;
+    border-radius:8px;
+    border:1px solid var(--line);
+  }
+  .compare figcaption{
+    margin-top:10px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    font-family:'Archivo', sans-serif;
+    font-weight:700;
+    font-size:11.5px;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+  }
+  .compare .side{
+    padding:4px 10px;
+    border-radius:999px;
+    background:var(--chip-bg);
+    color:var(--muted);
+  }
+  .compare .side.generated{ background:var(--accent); color:#fff; }
+  .compare .sep{
+    color:var(--muted);
+    font-weight:600;
+    text-transform:none;
+    letter-spacing:0;
+    font-family:'Source Sans 3', sans-serif;
+    font-size:12px;
+  }
+
   footer.note{
     margin-top:44px;
     padding-top:20px;
@@ -332,9 +379,10 @@
       </li>
       <li class="step">
         <div class="num">7</div>
-        <div class="stitle">Tap "Download PDF"</div>
+        <div class="stitle">Tap "Download PDF" — this is the step that matters</div>
         <div class="sbody">
-          <p>Not "Submit &amp; Send" — that one also tries to open an email to hr@norwestpersonnel.com.au, which you don't need while testing. Download PDF just saves the file.</p>
+          <p>It saves a finished PDF built from what you just typed. Open that file and put it next to the paper Training form you already use — that comparison is the actual test.</p>
+          <p>Not "Submit &amp; Send" — that one also tries to open an email to hr@norwestpersonnel.com.au, which you don't need while testing.</p>
           <div class="callout"><b>Tip:</b> the PDF lands wherever your browser normally saves downloads (usually a "Downloads" folder).</div>
         </div>
       </li>
@@ -366,9 +414,24 @@
       <li class="step">
         <div class="num">10</div>
         <div class="stitle">Draw a signature, then tap "Download PDF"</div>
-        <div class="sbody"><p>Same as the Training form — use Download PDF, not Submit &amp; Send, while you're just testing it.</p></div>
+        <div class="sbody"><p>Same as the Training form — open the downloaded file and compare it to the paper Medical/D&amp;A form. Use Download PDF, not Submit &amp; Send, while you're just testing it.</p></div>
       </li>
     </ol>
+  </section>
+
+  <section class="block">
+    <div class="block-head"><h2>What the comparison looks like</h2></div>
+    <p class="lede" style="margin-bottom:18px;">These are the real result — the original paper form on the left, the PDF the app generates on the right, side by side. This is exactly what you're checking for in your own test run.</p>
+    <div class="compare">
+      <figure>
+        <img src="training-claim-comparison.jpg" alt="Training Payment Claim Form: original paper form on the left, app-generated PDF on the right, side by side" loading="lazy">
+        <figcaption><span class="side original">Original form</span><span class="sep">vs</span><span class="side generated">App-generated PDF</span></figcaption>
+      </figure>
+      <figure>
+        <img src="medical-claim-comparison.jpg" alt="Medical & D&amp;A Allowance Claim Form: original paper form on the left, app-generated PDF on the right, side by side" loading="lazy">
+        <figcaption><span class="side original">Original form</span><span class="sep">vs</span><span class="side generated">App-generated PDF</span></figcaption>
+      </figure>
+    </div>
   </section>
 
   <section class="block">
