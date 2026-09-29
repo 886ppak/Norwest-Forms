@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claim Form Test Guide — Norwest Forms</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f7f4ef;
+    --surface:#ffffff;
+    --ink:#1c1a17;
+    --muted:#6b6459;
+    --line:#e6e0d6;
+    --accent:#c44a37;
+    --track-training:#c44a37;
+    --track-medical:#3d6b5c;
+    --chip-bg:#f1ece2;
+    --good:#3d6b5c;
+    --warn-bg:#fbeee9;
+    --warn-line:#e7c3b6;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#17140f;
+      --surface:#221e18;
+      --ink:#f3ede2;
+      --muted:#a89e8d;
+      --line:#3a3327;
+      --accent:#e2694f;
+      --track-training:#e2694f;
+      --track-medical:#7fb39c;
+      --chip-bg:#2c2720;
+      --good:#7fb39c;
+      --warn-bg:#2e2119;
+      --warn-line:#5a3a2c;
+      color-scheme: dark;
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{ margin:0; }
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Source Sans 3', system-ui, sans-serif;
+    padding:32px 18px 64px;
+  }
+  .wrap{ max-width:720px; margin:0 auto; }
+
+  header.top{ margin-bottom:34px; }
+  .eyebrow{
+    font-family:'Archivo', sans-serif;
+    font-weight:700;
+    font-size:12px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--accent);
+    margin:0 0 10px;
+  }
+  h1{
+    font-family:'Archivo', sans-serif;
+    font-weight:800;
+    font-size:clamp(26px,6vw,36px);
+    line-height:1.12;
+    margin:0 0 12px;
+    text-wrap:balance;
+  }
+  .lede{
+    font-size:16px;
+    line-height:1.6;
+    color:var(--muted);
+    margin:0;
+    max-width:60ch;
+  }
+
+  .linkbox{
+    margin-top:22px;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:14px 16px;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:10px 14px;
+  }
+  .linkbox .lbl{
+    font-family:'Archivo', sans-serif;
+    font-weight:700;
+    font-size:11px;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:var(--muted);
+  }
+  .linkbox a{
+    color:var(--ink);
+    font-weight:600;
+    font-size:15px;
+    text-decoration:none;
+    border-bottom:1.5px solid var(--accent);
+    word-break:break-all;
+  }
+  .linkbox a:hover{ opacity:.75; }
+
+  section.block{ margin-top:40px; }
+  .block-head{
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+    margin-bottom:16px;
+    flex-wrap:wrap;
+  }
+  .block-head h2{
+    font-family:'Archivo', sans-serif;
+    font-weight:800;
+    font-size:19px;
+    margin:0;
+  }
+  .block-head .tag{
+    font-family:'Archivo', sans-serif;
+    font-weight:700;
+    font-size:10.5px;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    padding:3px 9px;
+    border-radius:999px;
+    background:var(--chip-bg);
+    color:var(--muted);
+  }
+  .track-training .block-head .tag.on{ background:var(--track-training); color:#fff; }
+  .track-medical .block-head .tag.on{ background:var(--track-medical); color:#fff; }
+
+  ol.steps{
+    list-style:none;
+    margin:0;
+    padding:0;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+  }
+  .step{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:16px 18px;
+    display:grid;
+    grid-template-columns:34px 1fr;
+    gap:4px 14px;
+    align-items:start;
+  }
+  .step .num{
+    grid-row:1 / span 2;
+    width:34px;
+    height:34px;
+    border-radius:50%;
+    background:var(--chip-bg);
+    color:var(--ink);
+    font-family:'Archivo', sans-serif;
+    font-weight:800;
+    font-size:14px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .track-training .step .num{ background:var(--track-training); color:#fff; }
+  .track-medical .step .num{ background:var(--track-medical); color:#fff; }
+  .step .stitle{
+    font-weight:700;
+    font-size:15.5px;
+    line-height:1.4;
+  }
+  .step .sbody{
+    color:var(--muted);
+    font-size:14.5px;
+    line-height:1.55;
+    min-width:0;
+  }
+  .step .sbody p{ margin:6px 0 0; }
+  .step .sbody p:first-child{ margin-top:0; }
+
+  .fieldgrid{
+    margin-top:10px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+  }
+  .fieldgrid .f{
+    background:var(--chip-bg);
+    border-radius:7px;
+    padding:5px 10px;
+    font-size:13px;
+    font-weight:600;
+    color:var(--ink);
+  }
+
+  .callout{
+    margin-top:10px;
+    background:var(--warn-bg);
+    border:1px solid var(--warn-line);
+    border-radius:10px;
+    padding:10px 13px;
+    font-size:13.5px;
+    line-height:1.5;
+    color:var(--ink);
+  }
+  .callout b{ color:var(--accent); }
+
+  .checklist{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:18px 20px 20px;
+  }
+  .checklist ul{
+    list-style:none;
+    margin:0;
+    padding:0;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+  .checklist li{
+    display:flex;
+    gap:10px;
+    align-items:flex-start;
+    font-size:14.5px;
+    line-height:1.5;
+  }
+  .checklist li::before{
+    content:"";
+    flex:0 0 auto;
+    width:17px; height:17px;
+    margin-top:2px;
+    border-radius:5px;
+    border:1.5px solid var(--good);
+  }
+
+  footer.note{
+    margin-top:44px;
+    padding-top:20px;
+    border-top:1px solid var(--line);
+    color:var(--muted);
+    font-size:13px;
+    line-height:1.6;
+  }
+
+  @media (max-width:480px){
+    .step{ grid-template-columns:28px 1fr; gap:4px 10px; }
+    .step .num{ width:28px; height:28px; font-size:12.5px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <p class="eyebrow">Norwest Forms · Feature test</p>
+    <h1>Try the new Training &amp; Medical claim forms</h1>
+    <p class="lede">
+      Two new claim forms just went live on the Norwest Personnel side of the
+      timesheet app. This walks you through filling one in and downloading the
+      finished PDF, so you can compare it against the paper form before it's
+      used for real.
+    </p>
+    <div class="linkbox">
+      <span class="lbl">Live app</span>
+      <a href="https://886ppak.github.io/Norwest-Forms/" target="_blank" rel="noopener">886ppak.github.io/Norwest-Forms</a>
+    </div>
+  </header>
+
+  <section class="block">
+    <div class="block-head"><h2>Get to the forms</h2></div>
+    <ol class="steps">
+      <li class="step">
+        <div class="num">1</div>
+        <div class="stitle">Open the link above</div>
+        <div class="sbody"><p>On a phone or a computer, either works. It opens straight to a company picker.</p></div>
+      </li>
+      <li class="step">
+        <div class="num">2</div>
+        <div class="stitle">Tap "Norwest Personnel"</div>
+        <div class="sbody"><p>Not "Norwest Crane Hire" — the two new claim forms only appear on the Personnel side.</p></div>
+      </li>
+      <li class="step">
+        <div class="num">3</div>
+        <div class="stitle">Find the two new tabs along the top</div>
+        <div class="sbody">
+          <p>Alongside the usual Timesheet and Leave tabs, you'll now see:</p>
+          <div class="fieldgrid">
+            <span class="f">Training Claim</span>
+            <span class="f">Medical/D&amp;A Claim</span>
+          </div>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section class="block track-training">
+    <div class="block-head">
+      <h2>Test: Training Claim</h2>
+      <span class="tag on">Training Payment Claim Form</span>
+    </div>
+    <ol class="steps">
+      <li class="step">
+        <div class="num">4</div>
+        <div class="stitle">Tap the "Training Claim" tab</div>
+        <div class="sbody"><p>Fill in the fields with anything — this is just a test, nothing gets sent.</p>
+          <div class="fieldgrid">
+            <span class="f">Employee Name</span>
+            <span class="f">Position Type</span>
+            <span class="f">Employee No</span>
+            <span class="f">Training Course Name</span>
+            <span class="f">Training Requested by</span>
+            <span class="f">Training Date(s)</span>
+            <span class="f">Training Location</span>
+            <span class="f">Duration</span>
+          </div>
+        </div>
+      </li>
+      <li class="step">
+        <div class="num">5</div>
+        <div class="stitle">Tick all four declaration boxes</div>
+        <div class="sbody"><p>Under "Employee Declaration". The form won't let you download until every box is ticked — that's deliberate, same as signing the paper form.</p></div>
+      </li>
+      <li class="step">
+        <div class="num">6</div>
+        <div class="stitle">Draw a signature</div>
+        <div class="sbody"><p>In the signature box near the bottom — finger or mouse, anything counts.</p></div>
+      </li>
+      <li class="step">
+        <div class="num">7</div>
+        <div class="stitle">Tap "Download PDF"</div>
+        <div class="sbody">
+          <p>Not "Submit &amp; Send" — that one also tries to open an email to hr@norwestpersonnel.com.au, which you don't need while testing. Download PDF just saves the file.</p>
+          <div class="callout"><b>Tip:</b> the PDF lands wherever your browser normally saves downloads (usually a "Downloads" folder).</div>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section class="block track-medical">
+    <div class="block-head">
+      <h2>Test: Medical/D&amp;A Claim</h2>
+      <span class="tag on">Medical &amp; D&amp;A Allowance Claim Form</span>
+    </div>
+    <ol class="steps">
+      <li class="step">
+        <div class="num">8</div>
+        <div class="stitle">Tap the "Medical/D&amp;A Claim" tab</div>
+        <div class="sbody"><p>Fill in your details, then tick either "Periodic Medical Assessment" or "Drug &amp; Alcohol (D&amp;A) Test" and fill in its date and who organised it.</p>
+          <div class="fieldgrid">
+            <span class="f">Employee Name</span>
+            <span class="f">Position Type</span>
+            <span class="f">Employee No</span>
+          </div>
+        </div>
+      </li>
+      <li class="step">
+        <div class="num">9</div>
+        <div class="stitle">Tick all five declaration boxes</div>
+        <div class="sbody"><p>Under "Employee Declaration" — same rule as the Training form, all five are required.</p></div>
+      </li>
+      <li class="step">
+        <div class="num">10</div>
+        <div class="stitle">Draw a signature, then tap "Download PDF"</div>
+        <div class="sbody"><p>Same as the Training form — use Download PDF, not Submit &amp; Send, while you're just testing it.</p></div>
+      </li>
+    </ol>
+  </section>
+
+  <section class="block">
+    <div class="block-head"><h2>What to check in the downloaded PDF</h2></div>
+    <div class="checklist">
+      <ul>
+        <li>It's a single page, and nothing is cut off or overlapping the logo.</li>
+        <li>Everything you typed appears in the right box.</li>
+        <li>The ticked declaration boxes show a checkmark.</li>
+        <li>Your signature shows up above the "Employee Signature" line.</li>
+        <li>There's a blank, greyed-out <b>Office Use Only</b> section near the bottom — that's for HR to fill in by hand after the form comes in, so it should be empty.</li>
+        <li>Overall layout — spacing, headings, table lines — looks close to the paper form you already use.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer class="note">
+    If anything looks off — a field missing, text cut off, wrong wording — flag it and it can be fixed before this goes out to everyone. Nothing you type into the test run is saved or sent anywhere unless you deliberately tap "Submit &amp; Send".
+  </footer>
+
+</div>
+</body>
+</html>
