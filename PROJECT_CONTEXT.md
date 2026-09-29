@@ -144,10 +144,24 @@ with real differences worth knowing:
   check every `declare*` flag) — this was a deliberate call since they're
   literal attestations on the real form, not optional notes; revisit if
   that turns out to be too strict for a real submission.
-- Both PDFs skip the real forms' "Office Use Only" HR-approval section
-  entirely (same "employee-facing page only" scope as the Leave PDF) and
-  use a shared `drawClaimIdRow()`/`drawClaimTitleAndLogo()`/
-  `drawClaimSigAndFooter()`/`drawDeclarationLines()` set of helpers rather
+- Both PDFs **do** include the real forms' "Office Use Only" HR-approval
+  section — unlike the Leave PDF (which only implements its employee-facing
+  page), NWP/HR specifically asked for this section to be reproduced so
+  they can fill it in themselves after a claim is submitted (e.g.
+  annotating the emailed PDF in a mobile PDF app, same workflow as the
+  original paper form). It's drawn by the shared `drawOfficeUseOnly()`
+  helper (called from `drawClaimSigAndFooter()`, after the "Please email…"
+  line and before the document-control footer) and is **always
+  blank/unchecked** — employees never fill this in, so don't wire it to
+  any app state. Training and Medical differ slightly in what goes in the
+  middle of this section (`officeUseOpts.middleType`): Training gets a
+  single "APPROVED HOURS" box, Medical gets an "Allowance Payable: Yes/No"
+  checkbox pair instead — everything else (NWP/HR Declaration checkboxes,
+  the Approver Name/Signature/Date row, Conditions of Payment numbered
+  list) is passed in via `officeUseOpts` and rendered by the same shared
+  code for both forms. Uses a shared `drawClaimIdRow()`/
+  `drawClaimTitleAndLogo()`/`drawClaimSigAndFooter()`/
+  `drawDeclarationLines()`/`drawOfficeUseOnly()` set of helpers rather
   than measuring each one to the same 300dpi-pixel-perfect standard as the
   two timesheets — layout is faithful but eyeballed/proportioned from the
   reference PDFs, not exactly measured. `drawClaimTitleAndLogo()` shrinks
