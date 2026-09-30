@@ -387,6 +387,7 @@
       <div style="font-size:12.5px; font-weight:600; opacity:.9; margin-top:2px;">Norwest Personnel</div>
     </button>
     <p style="color:#6b7280; font-size:10.5px; line-height:1.5; margin:18px 0 0;">This is an independently built tool and is not an official Norwest Crane Hire or Norwest Personnel system. It's provided as a convenience with no guarantee of accuracy — always follow your normal process if you're unsure, and contact your admin team with any questions.</p>
+    <p style="color:#6b7280; font-size:10.5px; line-height:1.5; margin:8px 0 0;">Basic usage (which form, roughly how often) is logged for a couple of months to gauge how much this tool gets used.</p>
   </div>
 </div>
 
@@ -2914,6 +2915,47 @@ function downloadPdf(){
   showToast('PDF downloaded');
 }
 
+// Best-effort usage logging - a separate Firebase project (norwest-forms)
+// from the app itself, a write-only event log to see how much this app
+// is actually getting used, per person - temporary (2-month) test, not a
+// permanent feature (explicitly asked to include name + IP this round,
+// reversing an earlier "no identifying data" instruction - see git
+// history/methodology if this file gets one). expireAt is set 60 days
+// out and a Firestore TTL policy on that field (see PROJECT_CONTEXT.md)
+// auto-deletes each record then, so this doesn't quietly become
+// permanent surveillance once the test's done. IP is self-reported by
+// the client via ipify (a free, no-key, CORS-friendly "what's my public
+// IP" service) - not independently verified server-side (that would
+// need a Cloud Function, which needs Firebase's paid Blaze plan; this
+// project's on the free Spark plan and a self-reported IP is accurate
+// enough for a usage-volume test). A plain unauthenticated fetch() to
+// the Firestore REST API, not the full Firebase SDK - this app has zero
+// JS dependencies beyond jsPDF and isn't worth bloating for one write-
+// only log call. Wrapped so it can NEVER block or fail an actual form
+// submission - sending the form is the whole point of this app; logging
+// is a bonus that fails silently if anything goes wrong.
+function logUsageEvent(formType, name, company){
+  try{
+    const now = new Date();
+    const expireAt = new Date(now.getTime() + 60*24*60*60*1000);
+    const write = (ip) => {
+      fetch('https://firestore.googleapis.com/v1/projects/norwest-forms/databases/(default)/documents/submissions', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ fields: {
+          formType: {stringValue: formType},
+          name: {stringValue: (name||'').trim().slice(0,80)},
+          company: {stringValue: company||''},
+          ip: {stringValue: ip||''},
+          submittedAt: {timestampValue: now.toISOString()},
+          expireAt: {timestampValue: expireAt.toISOString()}
+        }})
+      }).catch(()=>{});
+    };
+    fetch('https://api.ipify.org?format=json').then(r=>r.json()).then(d=>write(d.ip)).catch(()=>write(''));
+  }catch(e){}
+}
+
 async function submitTimesheet(){
   if(!validateRequiredFields('submitting')) return;
   const doc = buildPdfForCompany();
@@ -2947,6 +2989,7 @@ async function submitTimesheet(){
         // alongside a file, and only use 'text' for the body
       });
       showToast(copied ? `Shared — paste ${ADMIN_EMAIL} into To (copied for you)` : 'Shared — pick Gmail to attach & send');
+      logUsageEvent('timesheet', state.empName, getCompany());
       return;
     }catch(err){
       if(err.name === 'AbortError') return;
@@ -2958,6 +3001,7 @@ async function submitTimesheet(){
   const body = encodeURIComponent(`${subjectText}\n\nPlease find my completed timesheet attached (just downloaded — attach it from your Downloads).`);
   window.location.href = `mailto:${ADMIN_EMAIL}?subject=${subject}&body=${body}`;
   showToast('PDF downloaded — attach it in the email that opens');
+  logUsageEvent('timesheet', state.empName, getCompany());
 }
 
 function leaveFileName(){
@@ -3003,6 +3047,7 @@ async function submitLeave(){
     try{
       await navigator.share({ files:[file], title:subjectText });
       showToast(copied ? `Shared — paste ${ADMIN_EMAIL} into To (copied for you)` : 'Shared — pick Gmail to attach & send');
+      logUsageEvent('leave', leaveState.empName, getCompany());
       return;
     }catch(err){
       if(err.name === 'AbortError') return;
@@ -3013,11 +3058,19 @@ async function submitLeave(){
   const body = encodeURIComponent(`${subjectText}\n\nPlease find my completed leave application attached (just downloaded — attach it from your Downloads).`);
   window.location.href = `mailto:${ADMIN_EMAIL}?subject=${subject}&body=${body}`;
   showToast('PDF downloaded — attach it in the email that opens');
+  logUsageEvent('leave', leaveState.empName, getCompany());
 }
 
 // Shared by submitTraining()/submitMedical() — same clipboard-copy-then-share/mailto
-// fallback pattern as submitLeave() above, just parameterised.
-async function submitClaimPdf(doc, name, subjectText, bodyIntro){
+// fallback pattern as submitLeave() above, just parameterised. formType
+// added so the shared function can log correctly at both success points
+// itself - logging from the caller instead couldn't tell a real send
+// apart from a cancelled share, since this always resolves either way.
+// empName deliberately NOT threaded through from the medical claim -
+// see submitMedical() below for why: this is the one form where "who
+// submitted it" edges toward health information, so it's logged as bare
+// volume only, same as every other form gets, just with no name.
+async function submitClaimPdf(doc, name, subjectText, bodyIntro, formType, empName){
   const blob = doc.output('blob');
   const file = new File([blob], name, {type:'application/pdf'});
   const ADMIN_EMAIL = 'hr@norwestpersonnel.com.au';
@@ -3032,6 +3085,7 @@ async function submitClaimPdf(doc, name, subjectText, bodyIntro){
     try{
       await navigator.share({ files:[file], title:subjectText });
       showToast(copied ? `Shared — paste ${ADMIN_EMAIL} into To (copied for you)` : 'Shared — pick Gmail to attach & send');
+      logUsageEvent(formType, empName, getCompany());
       return;
     }catch(err){
       if(err.name === 'AbortError') return;
@@ -3042,6 +3096,7 @@ async function submitClaimPdf(doc, name, subjectText, bodyIntro){
   const body = encodeURIComponent(`${subjectText}\n\n${bodyIntro} (just downloaded — attach it from your Downloads).`);
   window.location.href = `mailto:${ADMIN_EMAIL}?subject=${subject}&body=${body}`;
   showToast('PDF downloaded — attach it in the email that opens');
+  logUsageEvent(formType, empName, getCompany());
 }
 
 function trainingFileName(){
@@ -3075,7 +3130,7 @@ function downloadTrainingPdf(){
 }
 async function submitTraining(){
   if(!validateTrainingRequiredFields('submitting')) return;
-  await submitClaimPdf(buildTrainingPdf(), trainingFileName(), `Training Payment Claim — ${trainingState.empName}`, 'Please find my completed training payment claim attached');
+  await submitClaimPdf(buildTrainingPdf(), trainingFileName(), `Training Payment Claim — ${trainingState.empName}`, 'Please find my completed training payment claim attached', 'training', trainingState.empName);
 }
 
 function medicalFileName(){
@@ -3109,7 +3164,10 @@ function downloadMedicalPdf(){
 }
 async function submitMedical(){
   if(!validateMedicalRequiredFields('submitting')) return;
-  await submitClaimPdf(buildMedicalPdf(), medicalFileName(), `Medical & D&A Allowance Claim — ${medicalState.empName}`, 'Please find my completed medical & D&A allowance claim attached');
+  // No name passed here, deliberately - this is the one form where "who
+  // submitted it" edges toward health information, so it's logged as
+  // bare volume only (see submitClaimPdf's own comment above).
+  await submitClaimPdf(buildMedicalPdf(), medicalFileName(), `Medical & D&A Allowance Claim — ${medicalState.empName}`, 'Please find my completed medical & D&A allowance claim attached', 'medical');
 }
 
 // keep the sticky header from eating screen space once the keyboard is up

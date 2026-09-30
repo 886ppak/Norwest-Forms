@@ -1,0 +1,41 @@
+rules_version = '2';
+
+// Norwest Forms usage-logging rules. This app has no login (deliberately
+// - see README), so there's no Firebase Auth identity to gate on; the
+// client writes are genuinely anonymous/unauthenticated. Write-only and
+// tightly shaped instead: a client can create a well-formed event
+// document and nothing else - never read, update, delete, or list this
+// collection (only an admin script with the project's own service
+// account, which bypasses these rules entirely, ever reads it back).
+// This is a temporary 2-month usage test (see index.html's
+// logUsageEvent), not a permanent feature - expireAt plus a Firestore
+// TTL policy on that field auto-deletes each record after its window,
+// so stale personal data doesn't just accumulate indefinitely once the
+// test is over.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /submissions/{eventId} {
+      allow create: if request.resource.data.keys().hasOnly(['formType', 'name', 'company', 'ip', 'submittedAt', 'expireAt'])
+                     && request.resource.data.formType is string
+                     && request.resource.data.formType in ['timesheet', 'leave', 'training', 'medical']
+                     && request.resource.data.name is string
+                     && request.resource.data.name.size() <= 80
+                     && request.resource.data.company is string
+                     && request.resource.data.company.size() <= 10
+                     && request.resource.data.ip is string
+                     && request.resource.data.ip.size() <= 45
+                     && request.resource.data.submittedAt is timestamp
+                     && request.resource.data.expireAt is timestamp
+                     && request.resource.data.expireAt > request.resource.data.submittedAt;
+      allow get, list, update, delete: if false;
+    }
+
+    // Deny everything else outright - an explicit fallback rather than
+    // relying on Firestore's own "no matching rule = denied" default, so
+    // adding some unrelated collection later can't accidentally inherit
+    // more access than intended just by sitting under the same database.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

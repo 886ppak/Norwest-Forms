@@ -390,9 +390,64 @@ Google account elsewhere in the same browser session won't show it.
   of the numbers.
 
 ## Hosting
-Static GitHub Pages, repo root. No backend of our own — the Apps Script web
-app is the only server-side piece, and it's Google's infrastructure, not
-ours to host.
+Static GitHub Pages, repo root. Apps Script (job numbers) is Google's own
+infrastructure, not ours to host. There's now also a small Firebase
+project (`norwest-forms`) for usage logging only - see its own section
+below; it holds no form data, no PDFs, nothing from the actual timesheets/
+claims, just a bare event log.
+
+## Usage logging (temporary, ~2-month test)
+Person asked whether the app is actually getting used and by how much,
+given HR started asking for form changes (implying real usage) despite
+only a handful of people having the link. `logUsageEvent()` in index.html
+fires a best-effort, fire-and-forget write to a separate Firebase project
+(`norwest-forms`, own Firebase project - NOT the same as any other app's)
+on every real "Submit & Send" (not the separate "Download PDF" buttons),
+recording just `formType` / `name` / `company` / `ip` / `submittedAt` /
+`expireAt`.
+
+Two things worth knowing if this ever needs touching:
+- **The Medical & D&A Allowance Claim form is deliberately logged WITHOUT
+  a name** - `submitMedical()` doesn't pass `empName` through to
+  `submitClaimPdf()`/`logUsageEvent()` at all, unlike every other form.
+  This was a direct ask: even though D&A testing isn't stigmatized in this
+  industry, "who submitted the medical form" is the one piece of usage
+  data here that edges toward health information, so it stays anonymous
+  (formType+company+timestamp only) regardless of that context. Don't
+  thread a name through for this form without asking first.
+- **This is disclosed on the first-open company-picker screen**
+  (`#companyGate`) - a one-line addition under the existing "not an
+  official system" disclaimer. Silently logging identifiable data (name +
+  IP) without telling anyone was flagged as a real problem, not a detail -
+  don't remove that disclosure line without replacing it with something
+  equivalent, and don't add more logging elsewhere without extending it.
+
+No Firebase SDK added to the app - it's a plain unauthenticated `fetch()`
+POST to the Firestore REST API (`logUsageEvent()`'s own comment explains
+why: zero other JS dependencies beyond jsPDF, not worth bloating for one
+write-only call). IP is self-reported by the client via ipify (a free,
+no-key, CORS-friendly "what's my public IP" lookup) - not independently
+verified server-side, since that would need a Cloud Function, which needs
+Firebase's paid Blaze plan; this project is on the free Spark plan and a
+self-reported IP is accurate enough for a usage-volume test.
+
+`expireAt` is set 60 days out per event, meant to be paired with a
+Firestore TTL policy on that field so records auto-delete once the test
+window passes rather than accumulating personal data indefinitely. TTL
+couldn't be set via the admin API this round (403 - a genuine IAM gap on
+the project's auto-generated Firebase Admin SDK service account, not the
+same "not allowed to touch infra" block security-rules deploys hit) - if
+nobody's turned it on via Firestore console (Rules tab's sibling "TTL"
+tab, field `expireAt` on the `submissions` collection) by the time this
+test should end, delete the `submissions` collection manually instead.
+
+`firestore.rules` in this repo (new file) is write-only and tightly
+shaped - a client can create a well-formed event document and nothing
+else, never read/list/update/delete. Needs to be published via the
+Firebase console's Rules tab for the `norwest-forms` project (same
+console-paste-and-publish step every rules change on the sibling
+myslewer project needs - couldn't be automated from here either).
+
 
 ## What NOT to change without asking
 - The Total Daily Hours / Total Work Hours = sum-of-job-hours logic (see
