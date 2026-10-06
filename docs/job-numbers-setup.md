@@ -83,6 +83,18 @@ yearly Medicals & Lab D&As / Inductions, Courses & Training number
 (NCH30406) goes in the `Medicals` column and fills in when someone picks
 the `NCH MEDICALS` job client in the app.
 
+## Fill in older months (optional, one-off)
+Pay weeks that cross a month-end need both months' numbers, because each
+day looks up its own month. To pull every past job numbers email out of
+Gmail at once:
+1. In Apps Script, run `previewOldEmails`. The log lists each email found,
+   the month it's for and its numbers. Nothing is changed.
+2. If that looks right, run `backfillOldEmails`. It writes a row per month
+   (updating any that already exist) and sorts the sheet oldest-first.
+
+It searches all of Gmail for `"Visual Dispatch" "month of"`, so it finds
+emails whoever sent them, with or without the label.
+
 ## Safeguards
 - **Don't delete the sheet.** The script lives inside it, so deleting the
   sheet deletes the script and breaks the app's link.

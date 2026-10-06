@@ -105,6 +105,61 @@ function monthKeyFromEmail_(text, date) {
   return Utilities.formatDate(next, Session.getScriptTimeZone(), 'MM-yyyy');
 }
 
+// ---- One-off backfill of older months ----------------------------------
+// Searches ALL of Gmail (not just the label) for past job numbers emails,
+// e.g. to fill in previous months so pay weeks that cross a month-end have
+// both months' numbers. Run previewOldEmails() first (changes nothing),
+// then backfillOldEmails() to write the rows.
+const BACKFILL_QUERY = '"Visual Dispatch" "month of"';
+
+function findOldEmails_() {
+  const found = [];
+  let start = 0, batch;
+  do {
+    batch = GmailApp.search(BACKFILL_QUERY, start, 100);
+    batch.forEach(thread => thread.getMessages().forEach(msg => {
+      const text = msg.getPlainBody();
+      const nums = parseJobNumbers_(text);
+      if (!Object.values(nums).some(Boolean)) return;
+      found.push({ date: msg.getDate(), from: msg.getFrom(), month: monthKeyFromEmail_(text, msg.getDate()), nums: nums });
+    }));
+    start += batch.length;
+  } while (batch.length === 100 && start < 1000);
+  // Oldest first, so if a month was re-sent/corrected the latest email wins
+  found.sort((a, b) => a.date - b.date);
+  return found;
+}
+
+// Lists every old email it can find and what it would write. Writes nothing.
+function previewOldEmails() {
+  const tz = Session.getScriptTimeZone();
+  const found = findOldEmails_();
+  Logger.log('Found ' + found.length + ' job numbers email(s):');
+  found.forEach(f => Logger.log(
+    f.month + '  (received ' + Utilities.formatDate(f.date, tz, 'dd/MM/yyyy') + ' from ' + f.from + ')  ' +
+    HEADERS.slice(1).map(h => h + ': ' + (f.nums[h] || '-')).join(' | ')));
+}
+
+// Writes a row per month found (updates the month's row if it already exists).
+function backfillOldEmails() {
+  const found = findOldEmails_();
+  found.forEach(f => upsertMonth_(f.month, f.nums));
+  sortMonths_();
+  Logger.log('Wrote ' + found.length + ' email(s) covering ' + new Set(found.map(f => f.month)).size + ' month(s).');
+}
+
+// Keeps the sheet in date order (oldest month at the top).
+function sortMonths_() {
+  const sheet = getSheet_();
+  const last = sheet.getLastRow();
+  if (last < 3) return;
+  const range = sheet.getRange(2, 1, last - 1, HEADERS.length);
+  const rows = range.getDisplayValues();
+  const key = r => { const [m, y] = String(r[0]).split('-'); return (Number(y) || 0) * 100 + (Number(m) || 0); };
+  rows.sort((a, b) => key(a) - key(b));
+  range.setValues(rows);
+}
+
 function upsertMonth_(monthKey, nums) {
   const sheet = getSheet_();
   const values = sheet.getDataRange().getDisplayValues();
