@@ -389,6 +389,14 @@ Google account elsewhere in the same browser session won't show it.
   looser versions grabbed stray words like "NCH" or "Operations" instead
   of the numbers.
 
+**October 2026: the original sheet + script were deleted and couldn't be
+recovered** (the old `JOB_NUMBERS_URL` returned Google's "Page Not Found").
+A rebuilt script is saved in `apps-script/JobNumbers.gs` with step-by-step
+setup in `docs/job-numbers-setup.md`. Its email-parsing matcher
+(`findJobNumber_`) is a fresh rewrite, not the original tested regexes, so
+check it against a real monthly email (the guide's `testSetup` step) before
+trusting it.
+
 ## Hosting
 Static GitHub Pages, repo root. Apps Script (job numbers) is Google's own
 infrastructure, not ours to host. There's now also a small Firebase
