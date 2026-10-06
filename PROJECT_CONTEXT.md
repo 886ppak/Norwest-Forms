@@ -404,6 +404,16 @@ before). Sixth column `Medicals` (the yearly Medicals & Lab D&As /
 Inductions, Courses & Training number, NCH30406 for 2026) backs the
 `NCH MEDICALS` job client added to `CLIENTS`/`CLIENT_SITE_MAP` in v1.26.
 
+**Missing-month warnings (v1.27):** if the sheet has no row for a job
+line's month, the job row shows an orange "type it in manually" note
+(`.jn-missing`) and the Job numbers card warns about the current month.
+`checkForNewMonth()` now also re-fetches (max every 30 min, and on
+`visibilitychange`) while the current month is missing, and a successful
+fetch runs `autofillAllJobNumbers()` so late numbers fill themselves in.
+Month checks use the phone's local month (`currentMonthISO()`), not UTC, so
+Perth flips at local midnight. Script side, `checkCurrentMonth_()` emails
+the owner daily while the current month's row is missing.
+
 ## Hosting
 Static GitHub Pages, repo root. Apps Script (job numbers) is Google's own
 infrastructure, not ours to host. There's now also a small Firebase

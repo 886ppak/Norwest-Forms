@@ -83,6 +83,20 @@ yearly Medicals & Lab D&As / Inductions, Courses & Training number
 (NCH30406) goes in the `Medicals` column and fills in when someone picks
 the `NCH MEDICALS` job client in the app.
 
+## If a month's numbers don't arrive
+- **Workers:** when there's no row for the month, the app shows an orange
+  warning on the Job numbers card and under any NCH job line, telling them to
+  type the job number in manually. The app re-checks the sheet every time
+  it's opened (at most every 30 minutes) and fills the numbers in as soon as
+  they appear.
+- **You:** each daily run of `processJobNumberEmails` emails the script's
+  owner if the sheet has no row for the current month, and repeats daily
+  until the row is there. The first run after pasting this version asks for
+  permission to send email: run `processJobNumberEmails` once by hand and
+  allow it.
+- Check **Project Settings (⚙️) → Time zone** is `(GMT+08:00) Perth`, so
+  "the current month" flips at Perth midnight.
+
 ## Fill in older months (optional, one-off)
 Pay weeks that cross a month-end need both months' numbers, because each
 day looks up its own month. To pull every past job numbers email out of

@@ -55,6 +55,27 @@ function processJobNumberEmails() {
     });
     thread.removeLabel(label);
   });
+  checkCurrentMonth_();
+}
+
+// Emails the script's owner if the sheet has no row for the current month
+// (email never arrived, filter/label broke, wording changed...). Runs at the
+// end of every daily trigger run, so it repeats once a day until fixed.
+// Workers see a matching "type it in manually" warning in the app meanwhile.
+function checkCurrentMonth_() {
+  const tz = Session.getScriptTimeZone();
+  const monthKey = Utilities.formatDate(new Date(), tz, 'MM-yyyy');
+  const months = getSheet_().getDataRange().getDisplayValues().slice(1).map(r => String(r[0]).trim());
+  if (months.indexOf(monthKey) !== -1) return;
+  const me = Session.getEffectiveUser().getEmail();
+  const sheetUrl = SpreadsheetApp.getActiveSpreadsheet().getUrl();
+  MailApp.sendEmail(me, 'Norwest Forms: job numbers missing for ' + monthKey,
+    'The JobNumbers sheet has no row for ' + monthKey + ', so workers are being told to type job numbers in manually.\n\n' +
+    'To fix it, either:\n' +
+    '  - add the row by hand in the sheet: ' + sheetUrl + '\n' +
+    '  - or find this month\'s Norwest "Visual Dispatch" email, add the Process-JobNumbers label, and run processJobNumberEmails in Apps Script.\n\n' +
+    'If the email arrived but the numbers weren\'t picked up, Norwest may have changed the wording - send the email text to whoever maintains the app.\n\n' +
+    'This reminder repeats each day until the row is there.');
 }
 
 // Pulls the four job numbers out of the email. Built against the real
