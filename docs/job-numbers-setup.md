@@ -91,9 +91,9 @@ the `NCH MEDICALS` job client in the app.
   they appear.
 - **You:** each daily run of `processJobNumberEmails` emails the script's
   owner if the sheet has no row for the current month, and repeats daily
-  until the row is there. The first run after pasting this version asks for
-  permission to send email: run `processJobNumberEmails` once by hand and
-  allow it.
+  until the row is there. To grant the "send email" permission and check it
+  works, run `testAlertEmail` once by hand (tick every box on Google's
+  permission screen). It sends you one test email.
 - Check **Project Settings (⚙️) → Time zone** is `(GMT+08:00) Perth`, so
   "the current month" flips at Perth midnight.
 

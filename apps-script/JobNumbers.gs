@@ -230,3 +230,11 @@ function testSetup() {
   const nums = parseJobNumbers_(text);
   Object.keys(nums).forEach(site => Logger.log(site + ': ' + (nums[site] || '(not found)')));
 }
+
+// Run by hand to check the missing-month alert can send email (and to grant
+// the "send email as you" permission). Sends one test email to yourself.
+function testAlertEmail() {
+  MailApp.sendEmail(Session.getEffectiveUser().getEmail(),
+    'Norwest Forms: test alert',
+    'If you got this, the missing job numbers alert can email you.');
+}
