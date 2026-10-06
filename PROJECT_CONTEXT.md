@@ -397,7 +397,9 @@ setup in `docs/job-numbers-setup.md`. Its email-parsing matcher
 email text (`Port Hedland – NCH 30689`, `...Flights (...) = NCH30405`). It
 stores digits only and takes the month from the email's "for the month of
 <Month> <Year>" line, NOT the date received (the email arrives the month
-before).
+before). Sixth column `Medicals` (the yearly Medicals & Lab D&As /
+Inductions, Courses & Training number, NCH30406 for 2026) backs the
+`NCH MEDICALS` job client added to `CLIENTS`/`CLIENT_SITE_MAP` in v1.26.
 
 ## Hosting
 Static GitHub Pages, repo root. Apps Script (job numbers) is Google's own

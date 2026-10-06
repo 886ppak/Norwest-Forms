@@ -7,13 +7,13 @@
  *
  * The PWA (index.html) fetches the deployed web app URL (JOB_NUMBERS_URL)
  * and expects a JSON array like:
- *   [{"Month":"10-2026","Port Hedland":"12345","Newman":"...","Flights":"...","Logistics":"..."}]
+ *   [{"Month":"10-2026","Port Hedland":"12345","Newman":"...","Flights":"...","Logistics":"...","Medicals":"..."}]
  * Header names must match CLIENT_SITE_MAP in index.html EXACTLY
  * ("Port Hedland" with a space).
  */
 
 const SHEET_NAME = 'JobNumbers';
-const HEADERS = ['Month', 'Port Hedland', 'Newman', 'Flights', 'Logistics'];
+const HEADERS = ['Month', 'Port Hedland', 'Newman', 'Flights', 'Logistics', 'Medicals'];
 const GMAIL_LABEL = 'Process-JobNumbers';
 
 // Serves the sheet as JSON to the app. Live endpoint - the app depends on it.
@@ -63,12 +63,14 @@ function processJobNumberEmails() {
 //   Newman – NCH 30690
 //   Logistics – NCH 30691
 //   ...Job Number for Flights (When not paid by a Client) = NCH30405.
+//   ...Job Number for Medicals & Lab Das / Inductions, Courses & Training etc NCH30406.
 function parseJobNumbers_(text) {
   return {
     'Port Hedland': findJobNumber_(text, /port\s*hedland/i),
     'Newman':       findJobNumber_(text, /newman/i),
     'Flights':      findJobNumber_(text, /\bflights?\b/i),
-    'Logistics':    findJobNumber_(text, /logistics/i)
+    'Logistics':    findJobNumber_(text, /logistics/i),
+    'Medicals':     findJobNumber_(text, /medicals?/i)
   };
 }
 
@@ -108,7 +110,7 @@ function upsertMonth_(monthKey, nums) {
   const values = sheet.getDataRange().getDisplayValues();
   let rowIdx = values.findIndex((r, i) => i > 0 && String(r[0]).trim() === monthKey);
   if (rowIdx === -1) {
-    sheet.appendRow([monthKey, '', '', '', '']);
+    sheet.appendRow([monthKey].concat(HEADERS.slice(1).map(() => '')));
     rowIdx = sheet.getLastRow() - 1;
   }
   HEADERS.slice(1).forEach((h, i) => {
@@ -121,10 +123,14 @@ function getSheet_() {
   let sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_NAME);
+  }
+  // Make sure every header is there (adds "Medicals" to an older 5-column sheet)
+  const current = sheet.getRange(1, 1, 1, HEADERS.length).getDisplayValues()[0];
+  if (current.some((h, i) => String(h).trim() !== HEADERS[i])) {
     sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
   }
   // Keep every cell plain text so "10-2026" never turns into a date
-  sheet.getRange('A:E').setNumberFormat('@');
+  sheet.getRange(1, 1, sheet.getMaxRows(), HEADERS.length).setNumberFormat('@');
   return sheet;
 }
 

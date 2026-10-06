@@ -12,13 +12,13 @@ Norwest's monthly job numbers email.
 1. Go to sheets.google.com and create a blank spreadsheet. Name it
    `Norwest Job Numbers`.
 2. Rename the tab at the bottom (`Sheet1`) to exactly `JobNumbers`.
-3. Select columns A to E, then **Format → Number → Plain text**. This stops
+3. Select columns A to F, then **Format → Number → Plain text**. This stops
    `10-2026` turning into a date.
 4. Type these headers in row 1, spelled exactly like this:
 
-   | A | B | C | D | E |
-   |---|---|---|---|---|
-   | Month | Port Hedland | Newman | Flights | Logistics |
+   | A | B | C | D | E | F |
+   |---|---|---|---|---|---|
+   | Month | Port Hedland | Newman | Flights | Logistics | Medicals |
 
 5. Add a row for the current month, e.g. `10-2026` in column A (two-digit
    month, dash, four-digit year), then that month's job number under each
@@ -65,7 +65,7 @@ and the app would need updating again.
 2. Open **Execution log**. It lists the job number it found for each site.
    For the October 2026 email it should show `Month: 10-2026`,
    `Port Hedland: 30689`, `Newman: 30690`, `Flights: 30405`,
-   `Logistics: 30691`.
+   `Logistics: 30691`, `Medicals: 30406`.
 3. If any are wrong or `(not found)`, Norwest has probably changed the email
    wording. Send a copy of the new email text so `findJobNumber_` can be
    adjusted.
@@ -79,8 +79,9 @@ Each hour it checks for emails with the label, writes that month's row, and
 removes the label. It reads the month from the email's "for the month of
 October 2026" line (the email usually arrives late the month before) and
 stores just the digits of each job number (`NCH 30689` → `30689`). The
-yearly Medicals/Inductions number (NCH30406) has no column in the app, so
-it's ignored.
+yearly Medicals & Lab D&As / Inductions, Courses & Training number
+(NCH30406) goes in the `Medicals` column and fills in when someone picks
+the `NCH MEDICALS` job client in the app.
 
 ## Safeguards
 - **Don't delete the sheet.** The script lives inside it, so deleting the
