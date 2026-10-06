@@ -91,18 +91,25 @@ function findJobNumber_(text, siteRegex) {
 }
 
 // The email says which month it's for ("for the month of October 2026") and
-// usually arrives in the month BEFORE, so read the month from the text.
-// Falls back to the month after the email's date if that line is missing.
+// usually arrives late in the month BEFORE, so read the month from the text.
+// Sanity check: an email received on 26 Feb that says "February" is really
+// March's (seen in the real Feb 2026 email), so the month can never be
+// earlier than the month 10 days after it arrived. Early/Christmas emails
+// (21 Dec for January, 1 Jun for June) still keep their stated month.
+// Falls back to that same "10 days later" month if the line is missing.
 function monthKeyFromEmail_(text, date) {
   const MONTHS = ['january','february','march','april','may','june','july',
                   'august','september','october','november','december'];
+  const soon = new Date(date.getTime() + 10 * 24 * 60 * 60 * 1000);
+  const floor = soon.getFullYear() * 12 + soon.getMonth();
   const m = text.match(/month of\s+([A-Za-z]+)\s+(\d{4})/i);
   if (m) {
     const idx = MONTHS.indexOf(m[1].toLowerCase());
-    if (idx !== -1) return String(idx + 1).padStart(2, '0') + '-' + m[2];
+    if (idx !== -1 && Number(m[2]) * 12 + idx >= floor) {
+      return String(idx + 1).padStart(2, '0') + '-' + m[2];
+    }
   }
-  const next = new Date(date.getFullYear(), date.getMonth() + 1, 1);
-  return Utilities.formatDate(next, Session.getScriptTimeZone(), 'MM-yyyy');
+  return String(soon.getMonth() + 1).padStart(2, '0') + '-' + soon.getFullYear();
 }
 
 // ---- One-off backfill of older months ----------------------------------
