@@ -416,6 +416,13 @@ Month checks use the phone's local month (`currentMonthISO()`), not UTC, so
 Perth flips at local midnight. Script side, `checkCurrentMonth_()` emails
 the owner daily while the current month's row is missing.
 
+**One-time announcements** (`#noticeModal`, `showNoticeIfNeeded()`): shown
+once per phone on next open, gone for good once dismissed (stored as
+`norwestNoticeSeen` = `NOTICE_ID`). Brand-new users still on the company
+picker skip it, and it stops after `NOTICE_UNTIL`. To send a new one, edit
+the modal text and change `NOTICE_ID` + `NOTICE_UNTIL`. First used in v1.29
+for the October 2026 job numbers outage.
+
 ## Hosting
 Static GitHub Pages, repo root. Apps Script (job numbers) is Google's own
 infrastructure, not ours to host. There's now also a small Firebase
