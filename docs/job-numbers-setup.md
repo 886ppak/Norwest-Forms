@@ -81,7 +81,7 @@ October 2026" line (the email usually arrives late the month before) and
 stores just the digits of each job number (`NCH 30689` → `30689`). The
 yearly Medicals & Lab D&As / Inductions, Courses & Training number
 (NCH30406) goes in the `Medicals` column and fills in when someone picks
-the `NCH MEDICALS` job client in the app.
+the `NCH MEDICALS/LAB DAS/INDUCTIONS` job client in the app.
 
 ## If a month's numbers don't arrive
 - **Workers:** when there's no row for the month, the app shows an orange

@@ -402,7 +402,9 @@ stores digits only and takes the month from the email's "for the month of
 <Month> <Year>" line, NOT the date received (the email arrives the month
 before). Sixth column `Medicals` (the yearly Medicals & Lab D&As /
 Inductions, Courses & Training number, NCH30406 for 2026) backs the
-`NCH MEDICALS` job client added to `CLIENTS`/`CLIENT_SITE_MAP` in v1.26.
+`NCH MEDICALS/LAB DAS/INDUCTIONS` job client (added in v1.26 as `NCH MEDICALS`,
+renamed in v1.28; `loadDraft()` migrates old drafts). Job client PDF cells use
+`drawCell(..., {fit:true})` so long names shrink/wrap inside their day column.
 
 **Missing-month warnings (v1.27):** if the sheet has no row for a job
 line's month, the job row shows an orange "type it in manually" note
