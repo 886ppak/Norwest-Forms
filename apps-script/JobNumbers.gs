@@ -48,37 +48,59 @@ function processJobNumberEmails() {
   threads.forEach(thread => {
     thread.getMessages().forEach(msg => {
       const text = msg.getPlainBody();
-      const nums = {
-        'Port Hedland': findJobNumber_(text, /port\s*hedland/i),
-        'Newman':       findJobNumber_(text, /newman/i),
-        'Flights':      findJobNumber_(text, /flights?/i),
-        'Logistics':    findJobNumber_(text, /logistics/i)
-      };
+      const nums = parseJobNumbers_(text);
       if (Object.values(nums).some(Boolean)) {
-        upsertMonth_(monthKeyFor_(msg.getDate()), nums);
+        upsertMonth_(monthKeyFromEmail_(text, msg.getDate()), nums);
       }
     });
     thread.removeLabel(label);
   });
 }
 
-// Finds "<site> ... <job number>" on the same line. A job number must
-// contain at least 4 digits, so stray words like "NCH" or "Operations"
-// are never picked up. CHECK THIS AGAINST A REAL EMAIL (setup guide step 6).
+// Pulls the four job numbers out of the email. Built against the real
+// Norwest wording (October 2026 email):
+//   Port Hedland – NCH 30689
+//   Newman – NCH 30690
+//   Logistics – NCH 30691
+//   ...Job Number for Flights (When not paid by a Client) = NCH30405.
+function parseJobNumbers_(text) {
+  return {
+    'Port Hedland': findJobNumber_(text, /port\s*hedland/i),
+    'Newman':       findJobNumber_(text, /newman/i),
+    'Flights':      findJobNumber_(text, /\bflights?\b/i),
+    'Logistics':    findJobNumber_(text, /logistics/i)
+  };
+}
+
+// Finds the site name on a line, then the first "NCH 30689" / "NCH30405" /
+// "30689" style number AFTER it on that same line, and returns just the
+// digits. Needs 5+ digits, so stray words like "NCH" or "Operations" and the
+// year ("2026") are never picked up.
 function findJobNumber_(text, siteRegex) {
   const lines = text.split(/\r?\n/);
   for (const line of lines) {
-    if (!siteRegex.test(line)) continue;
-    const after = line.split(siteRegex).slice(1).join(' ');
-    const m = after.match(/\b([A-Z]{0,4}[-\/]?\d{4,}[A-Z0-9\-\/]*)\b/i);
+    const site = line.match(siteRegex);
+    if (!site) continue;
+    const after = line.slice(site.index + site[0].length);
+    const m = after.match(/(?:NCH\s*)?(\d{5,})/i);
     if (m) return m[1];
   }
   return '';
 }
 
-// The monthly email is for the month it arrives in.
-function monthKeyFor_(date) {
-  return Utilities.formatDate(date, Session.getScriptTimeZone(), 'MM-yyyy');
+// The email says which month it's for ("for the month of October 2026") and
+// usually arrives in the month BEFORE, so read the month from the text.
+// Falls back to the month after the email's date if that line is missing.
+function monthKeyFromEmail_(text, date) {
+  const MONTHS = ['january','february','march','april','may','june','july',
+                  'august','september','october','november','december'];
+  const m = text.match(/month of\s+([A-Za-z]+)\s+(\d{4})/i);
+  if (m) {
+    const idx = MONTHS.indexOf(m[1].toLowerCase());
+    if (idx !== -1) return String(idx + 1).padStart(2, '0') + '-' + m[2];
+  }
+  const next = new Date(date.getFullYear(), date.getMonth() + 1, 1);
+  return Utilities.formatDate(next, Session.getScriptTimeZone(), 'MM-yyyy');
 }
 
 function upsertMonth_(monthKey, nums) {
@@ -107,13 +129,15 @@ function getSheet_() {
 }
 
 // Run this once by hand from the editor to create the sheet and test parsing
-// on the newest labelled email WITHOUT removing the label.
+// on the newest labelled email WITHOUT removing the label or writing anything.
 function testSetup() {
   getSheet_();
   const label = GmailApp.getUserLabelByName(GMAIL_LABEL);
   const thread = label && label.getThreads(0, 1)[0];
   if (!thread) { Logger.log('Sheet ready. No email with label ' + GMAIL_LABEL + ' found yet.'); return; }
-  const text = thread.getMessages().pop().getPlainBody();
-  ['Port Hedland', 'Newman', 'Flights', 'Logistics'].forEach(site =>
-    Logger.log(site + ': ' + (findJobNumber_(text, new RegExp(site.replace(' ', '\\s*'), 'i')) || '(not found)')));
+  const msg = thread.getMessages().pop();
+  const text = msg.getPlainBody();
+  Logger.log('Month: ' + monthKeyFromEmail_(text, msg.getDate()));
+  const nums = parseJobNumbers_(text);
+  Object.keys(nums).forEach(site => Logger.log(site + ': ' + (nums[site] || '(not found)')));
 }

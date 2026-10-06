@@ -393,9 +393,11 @@ Google account elsewhere in the same browser session won't show it.
 recovered** (the old `JOB_NUMBERS_URL` returned Google's "Page Not Found").
 A rebuilt script is saved in `apps-script/JobNumbers.gs` with step-by-step
 setup in `docs/job-numbers-setup.md`. Its email-parsing matcher
-(`findJobNumber_`) is a fresh rewrite, not the original tested regexes, so
-check it against a real monthly email (the guide's `testSetup` step) before
-trusting it.
+(`findJobNumber_`) is a fresh rewrite, tested against the real October 2026
+email text (`Port Hedland – NCH 30689`, `...Flights (...) = NCH30405`). It
+stores digits only and takes the month from the email's "for the month of
+<Month> <Year>" line, NOT the date received (the email arrives the month
+before).
 
 ## Hosting
 Static GitHub Pages, repo root. Apps Script (job numbers) is Google's own

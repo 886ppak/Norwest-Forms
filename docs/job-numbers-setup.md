@@ -63,9 +63,12 @@ and the app would need updating again.
 1. Back in Apps Script, pick `testSetup` in the function dropdown at the top
    and click **Run**.
 2. Open **Execution log**. It lists the job number it found for each site.
-3. If any are wrong or `(not found)`, send a copy of the email text (you can
-   blank out anything private) so the matching in `findJobNumber_` can be
-   adjusted. The email wording decides how this has to work.
+   For the October 2026 email it should show `Month: 10-2026`,
+   `Port Hedland: 30689`, `Newman: 30690`, `Flights: 30405`,
+   `Logistics: 30691`.
+3. If any are wrong or `(not found)`, Norwest has probably changed the email
+   wording. Send a copy of the new email text so `findJobNumber_` can be
+   adjusted.
 
 ## 6. Schedule it
 1. In Apps Script, click the **clock icon (Triggers)** on the left.
@@ -73,7 +76,11 @@ and the app would need updating again.
    **Time-driven**, type **Hour timer**, **Every hour**. Save.
 
 Each hour it checks for emails with the label, writes that month's row, and
-removes the label. It treats the email as being for the month it arrives in.
+removes the label. It reads the month from the email's "for the month of
+October 2026" line (the email usually arrives late the month before) and
+stores just the digits of each job number (`NCH 30689` → `30689`). The
+yearly Medicals/Inductions number (NCH30406) has no column in the app, so
+it's ignored.
 
 ## Safeguards
 - **Don't delete the sheet.** The script lives inside it, so deleting the
