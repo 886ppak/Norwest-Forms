@@ -18,7 +18,7 @@ paper form, then shares it (or emails it) to that company's admin address
 layout, logo, and admin email are used throughout the app; see `COMPANIES`
 in index.html.
 
-## Files (all flat in repo root except icons/ and docs/)
+## Files (all flat in repo root except icons/, docs/, apps-script/ and tools/)
 - `index.html` — the entire app: UI, state, PDF generation, everything. No
   build step, no framework — vanilla JS in one file.
 - `manifest.json` — PWA manifest (install prompt, icons, app name).
@@ -26,7 +26,13 @@ in index.html.
   it works fully offline after the first online load.
 - `icons/icon-192.png`, `icons/icon-512.png` — app icons, generated from the
   real Norwest logo's icon mark.
-- `docs/` — README assets (currently just the install-to-home-screen gif).
+- `docs/` — README assets, plus `RUNBOOK.md` (what to do when things break —
+  read this first), `job-numbers-setup.md` (rebuild the job numbers
+  sheet/script) and the HR claim-form test guide.
+- `apps-script/JobNumbers.gs` — source of the Job Numbers API Apps Script
+  (lives in Google, this is the saved copy).
+- `tools/usage-stats.mjs` — read-only usage stats from the Firestore log.
+- `firestore.rules` — rules for the usage-logging Firestore project.
 
 ## Key implementation details worth knowing
 
@@ -366,30 +372,27 @@ own `otherFlag` — the job-client dropdown just never followed the same
 pattern. Keep both in sync if either changes.
 
 ## Backend automation (separate from this repo)
-A Google Apps Script project ("Job Numbers API") handles the monthly job
-number sync. **It lives in a different Google account than the one you're
-normally signed into — it's held under aiden.tunupopo's account, not
-yours.** To open script.google.com and actually see/edit it, use an
-incognito/private window and sign in as that account (or switch accounts
-in a regular window) — trying to reach it while signed into your own
-Google account elsewhere in the same browser session won't show it.
-- `doGet()` — serves the JobNumbers sheet as JSON to the PWA. Don't touch
-  this without understanding it's a live API endpoint other code depends on.
-- `processJobNumberEmails()` — reads Gmail threads labeled
-  "Process-JobNumbers" (auto-applied via a Gmail filter when Norwest's
-  monthly email arrives), regex-extracts the Port Hedland/Newman/Flights/
-  Logistics job numbers, writes/updates a row in the JobNumbers sheet, then
-  removes the label. The function itself contains no
-  `ScriptApp.newTrigger(...)` call, so its run frequency isn't visible in
-  the code at all — it's whatever time-driven trigger is configured on the
-  Apps Script project's Triggers page (the clock icon in the editor sidebar).
-  Don't assume a specific interval without checking there first. Regex
-  patterns were built and tested against the real email wording — don't
-  loosen them without testing against actual email text, since earlier
-  looser versions grabbed stray words like "NCH" or "Operations" instead
-  of the numbers.
+**Start with `docs/RUNBOOK.md`** for how it all fits together and what to do
+when it breaks; `docs/job-numbers-setup.md` is the step-by-step rebuild.
 
-**October 2026: the original sheet + script were deleted and couldn't be
+A Google Apps Script project ("Job Numbers API") handles the monthly job
+number sync. It's bound to the job numbers Google Sheet (Extensions → Apps
+Script), in the Google account that receives Norwest's "Visual Dispatch"
+emails. Source of truth for the code is `apps-script/JobNumbers.gs` in this
+repo: paste it into the editor after any change. (Before Oct 2026 the
+original lived under aiden.tunupopo's account and its code was never saved
+anywhere; it was lost when the sheet was deleted.)
+- `doGet()` serves the JobNumbers sheet as JSON to the PWA. Live endpoint
+  the app depends on; changing it needs Manage deployments → New version.
+- `processJobNumberEmails()` reads Gmail threads labelled
+  `Process-JobNumbers` (applied by a Gmail filter: From
+  `@norwestcranehire.com.au`, has the words `Visual Dispatch`), writes the
+  month's row, removes the label, then runs `checkCurrentMonth_()`. Runs on a
+  **daily 9–10am time-driven trigger** (Apps Script → Triggers).
+- `previewOldEmails()` / `backfillOldEmails()` rebuild past months straight
+  from Gmail. `testSetup()` and `testAlertEmail()` are manual checks.
+
+**October 2026 outage: the original sheet + script were deleted and couldn't be
 recovered** (the old `JOB_NUMBERS_URL` returned Google's "Page Not Found").
 Rebuilt on 7 Oct 2026 as a new sheet + bound script (new deployment URL now
 in `JOB_NUMBERS_URL`). The script source is saved in
@@ -474,6 +477,12 @@ same "not allowed to touch infra" block security-rules deploys hit) - if
 nobody's turned it on via Firestore console (Rules tab's sibling "TTL"
 tab, field `expireAt` on the `submissions` collection) by the time this
 test should end, delete the `submissions` collection manually instead.
+
+**Reading the stats:** `tools/usage-stats.mjs` (read-only, needs the
+service account JSON in `NORWEST_FORMS_SERVICE_ACCOUNT`) lists submissions in
+Perth time and summarises each pay week (week ending Sunday, due Monday
+10am AWST, late = Monday after 10am). It skips the one `company: TEST`
+record written while checking the live rules in Oct 2026. See RUNBOOK §8.
 
 `firestore.rules` in this repo (new file) is write-only and tightly
 shaped - a client can create a well-formed event document and nothing

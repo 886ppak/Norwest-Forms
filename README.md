@@ -112,3 +112,7 @@ changed without checking first — read it before submitting changes.
 All rights reserved — see [`LICENSE`](./LICENSE). This code is not
 open source; it's published here for hosting purposes only. No permission
 is granted to copy, reuse, or redistribute it.
+
+## Maintainers
+Something broken (job numbers not filling in, etc.)? Start with
+[docs/RUNBOOK.md](docs/RUNBOOK.md).
