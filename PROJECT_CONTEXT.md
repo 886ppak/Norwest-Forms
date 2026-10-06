@@ -391,8 +391,11 @@ Google account elsewhere in the same browser session won't show it.
 
 **October 2026: the original sheet + script were deleted and couldn't be
 recovered** (the old `JOB_NUMBERS_URL` returned Google's "Page Not Found").
-A rebuilt script is saved in `apps-script/JobNumbers.gs` with step-by-step
-setup in `docs/job-numbers-setup.md`. Its email-parsing matcher
+Rebuilt on 7 Oct 2026 as a new sheet + bound script (new deployment URL now
+in `JOB_NUMBERS_URL`). The script source is saved in
+`apps-script/JobNumbers.gs` with step-by-step setup in
+`docs/job-numbers-setup.md`. When editing the script, redeploy via Manage
+deployments → edit → New version so the URL stays the same. Its email-parsing matcher
 (`findJobNumber_`) is a fresh rewrite, tested against the real October 2026
 email text (`Port Hedland – NCH 30689`, `...Flights (...) = NCH30405`). It
 stores digits only and takes the month from the email's "for the month of
