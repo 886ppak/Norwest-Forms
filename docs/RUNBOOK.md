@@ -54,8 +54,10 @@ Current deployment (Oct 2026):
 
 Rules it follows (all learned from the real emails, Nov 2025 to Oct 2026):
 - **Digits only** are stored: `NCH 30689` and `NCH30405` both become the
-  number alone. Needs 5+ digits, so it never grabs "NCH", "Operations" or
-  the year.
+  number alone. A job number must be **exactly 5 digits**, so it never grabs
+  "NCH", "Operations", the year, or a phone number. (Before this rule, a
+  Port Hedland phone number, 91721518, on a line mentioning flights ended up
+  in June 2026's Flights cell.)
 - **The month comes from the email text** ("for the month of October 2026"),
   not the date it arrived, because it usually arrives the month before.
 - **Safety net:** the month can never be earlier than the month 10 days
@@ -105,6 +107,10 @@ Fix, quickest first:
    the log. A `(not found)` means Norwest changed the wording; update
    `findJobNumber_` / `parseJobNumbers_` in `apps-script/JobNumbers.gs`
    against the new email text, then paste the new version in.
+4. **A number in the sheet looks wrong?** Set `TRACE_VALUE` at the bottom of
+   the script to that number, run `traceValue`, and the log shows which
+   email(s) it came from: date, sender, subject and the exact line. Correct
+   the cell by hand, or fix the parser and re-run `backfillOldEmails`.
 
 ---
 

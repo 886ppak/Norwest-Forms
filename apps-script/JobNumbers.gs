@@ -97,15 +97,17 @@ function parseJobNumbers_(text) {
 
 // Finds the site name on a line, then the first "NCH 30689" / "NCH30405" /
 // "30689" style number AFTER it on that same line, and returns just the
-// digits. Needs 5+ digits, so stray words like "NCH" or "Operations" and the
-// year ("2026") are never picked up.
+// digits. Job numbers are EXACTLY 5 digits, so stray words ("NCH",
+// "Operations"), the year ("2026") and phone numbers ("91721518", the
+// Port Hedland 08 9172 xxxx exchange) are never picked up. A phone number
+// on a line mentioning flights once put 91721518 in June 2026's Flights.
 function findJobNumber_(text, siteRegex) {
   const lines = text.split(/\r?\n/);
   for (const line of lines) {
     const site = line.match(siteRegex);
     if (!site) continue;
     const after = line.slice(site.index + site[0].length);
-    const m = after.match(/(?:NCH\s*)?(\d{5,})/i);
+    const m = after.match(/(?:NCH\s*)?(?<!\d)(\d{5})(?!\d)/i);
     if (m) return m[1];
   }
   return '';
@@ -237,4 +239,26 @@ function testAlertEmail() {
   MailApp.sendEmail(Session.getEffectiveUser().getEmail(),
     'Norwest Forms: test alert',
     'If you got this, the missing job numbers alert can email you.');
+}
+
+// Debug helper: finds which email(s) a value in the sheet came from. Set
+// TRACE_VALUE to the odd number, run traceValue, and read the log (date,
+// sender, subject and the exact line it's on). Writes nothing.
+const TRACE_VALUE = '91721518';
+function traceValue() {
+  const spaced = TRACE_VALUE.length === 8 ? TRACE_VALUE.slice(0, 4) + ' ' + TRACE_VALUE.slice(4) : TRACE_VALUE;
+  const threads = GmailApp.search('"' + TRACE_VALUE + '" OR "' + spaced + '"', 0, 50);
+  const tz = Session.getScriptTimeZone();
+  let hits = 0;
+  threads.forEach(t => t.getMessages().forEach(msg => {
+    const lines = msg.getPlainBody().split(/\r?\n/);
+    lines.forEach(line => {
+      if (line.replace(/\s/g, '').indexOf(TRACE_VALUE) === -1) return;
+      hits++;
+      Logger.log(Utilities.formatDate(msg.getDate(), tz, 'dd/MM/yyyy') + ' | ' + msg.getFrom() +
+        ' | "' + msg.getSubject() + '"\n    line: ' + line.trim() +
+        '\n    labels: ' + t.getLabels().map(l => l.getName()).join(', '));
+    });
+  }));
+  Logger.log(hits ? hits + ' line(s) found.' : 'Not found in Gmail.');
 }
