@@ -58,6 +58,14 @@ Rules it follows (all learned from the real emails, Nov 2025 to Oct 2026):
   "NCH", "Operations", the year, or a phone number. (Before this rule, a
   Port Hedland phone number, 91721518, on a line mentioning flights ended up
   in June 2026's Flights cell.)
+- **Sense check before writing:** each new number is compared with the
+  typical value for that column over the previous 3 months. If it's more
+  than 2,000 away (`MAX_JUMP`), it's **not written**; the owner gets an
+  email "odd job number(s) not added" listing the month, column and value.
+  Normal changes (about +100 a month, about +1,000 for Flights/Medicals at
+  the July rollover) pass. If Norwest ever genuinely jumps to a very
+  different number range, type it into the sheet by hand once; the next
+  months then compare against it.
 - **The month comes from the email text** ("for the month of October 2026"),
   not the date it arrived, because it usually arrives the month before.
 - **Safety net:** the month can never be earlier than the month 10 days

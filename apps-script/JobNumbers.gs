@@ -55,6 +55,7 @@ function processJobNumberEmails() {
     });
     thread.removeLabel(label);
   });
+  reportSuspicious_();
   checkCurrentMonth_();
 }
 
@@ -175,6 +176,7 @@ function backfillOldEmails() {
   const found = findOldEmails_();
   found.forEach(f => upsertMonth_(f.month, f.nums));
   sortMonths_();
+  reportSuspicious_();
   Logger.log('Wrote ' + found.length + ' email(s) covering ' + new Set(found.map(f => f.month)).size + ' month(s).');
 }
 
@@ -190,6 +192,15 @@ function sortMonths_() {
   range.setValues(rows);
 }
 
+// Sense check: real job numbers only creep up month to month (Port Hedland
+// ~+100/month, Flights/Medicals jump ~+1000 at the July financial-year
+// rollover). A value more than MAX_JUMP away from the typical recent value
+// for that column (median of the up-to-3 nearest earlier months) is NOT
+// written - it's logged and emailed to the owner to check instead. Using a
+// median means one bad old cell can't block good values after it.
+const MAX_JUMP = 2000;
+const suspicious_ = [];
+
 function upsertMonth_(monthKey, nums) {
   const sheet = getSheet_();
   const values = sheet.getDataRange().getDisplayValues();
@@ -198,9 +209,32 @@ function upsertMonth_(monthKey, nums) {
     sheet.appendRow([monthKey].concat(HEADERS.slice(1).map(() => '')));
     rowIdx = sheet.getLastRow() - 1;
   }
+  const order = k => { const [m, y] = String(k).split('-'); return (Number(y) || 0) * 12 + (Number(m) || 0); };
+  const earlier = values.slice(1)
+    .filter(r => order(r[0]) < order(monthKey))
+    .sort((a, b) => order(b[0]) - order(a[0]));
   HEADERS.slice(1).forEach((h, i) => {
-    if (nums[h]) sheet.getRange(rowIdx + 1, i + 2).setValue(nums[h]);
+    if (!nums[h]) return;
+    const recent = earlier.map(r => Number(r[i + 1])).filter(n => n > 0).slice(0, 3).sort((a, b) => a - b);
+    const typical = recent.length ? recent[Math.floor(recent.length / 2)] : null;
+    if (typical !== null && Math.abs(Number(nums[h]) - typical) > MAX_JUMP) {
+      suspicious_.push(monthKey + ' ' + h + ': ' + nums[h] + ' (recent months ~' + typical + ') - not written');
+      return;
+    }
+    sheet.getRange(rowIdx + 1, i + 2).setValue(nums[h]);
   });
+}
+
+// Logs and emails anything the sense check refused to write.
+function reportSuspicious_() {
+  if (!suspicious_.length) return;
+  const list = suspicious_.splice(0);
+  list.forEach(x => Logger.log('SKIPPED ' + x));
+  MailApp.sendEmail(Session.getEffectiveUser().getEmail(),
+    'Norwest Forms: odd job number(s) not added',
+    'These job numbers looked wrong compared with recent months, so they were NOT written to the sheet:\n\n  ' +
+    list.join('\n  ') + '\n\nCheck the email (run traceValue with that number to find it) and type the right ' +
+    'number into the sheet by hand if needed: ' + SpreadsheetApp.getActiveSpreadsheet().getUrl());
 }
 
 function getSheet_() {
