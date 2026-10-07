@@ -339,6 +339,14 @@ for any new city-style field rather than hand-rolling the pattern again;
 for non-city fields, check `CLIENTS` and the job-row render logic in
 `renderDay()` for the reference implementation.
 
+**One phone = one user (v1.30).** The employee name is kept in sync across
+the timesheet, leave, training and medical forms (`NAME_FIELDS`,
+`shareName()`, `fillBlankNames()` on startup). Names, position/emp no and
+every signature are "sticky": "Start new week" and each form's clear button
+keep them; only the person deleting them (or a signature's own Clear link)
+removes them. Don't add anything that clears identity or signatures
+automatically without asking.
+
 ## Service worker versioning — IMPORTANT
 `CACHE_NAME` in `service-worker.js` MUST be bumped on every deploy that
 changes `index.html`, or returning users will keep getting served the old
