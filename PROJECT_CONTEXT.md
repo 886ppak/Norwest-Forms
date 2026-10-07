@@ -347,6 +347,16 @@ keep them; only the person deleting them (or a signature's own Clear link)
 removes them. Don't add anything that clears identity or signatures
 automatically without asking.
 
+**Employee signature is shared too (v1.31)** — `EMPLOYEE_SIGS` =
+`empSig`, `leaveSig`, `trainingSig`, `medicalSig` ONLY. Signing any of them by
+hand saves it as `norwestEmployeeSig` and copies it (scaled to fit,
+`copySigInto()`) into the other employee pads that are blank or were
+themselves copies (`norwestSigSynced`). Pads not yet set up (tab never opened)
+get it via `restoreEmployeeSig()` when their tab first opens. **Never add the
+supervisor pad (`supSig`) or any office/HR sign-off to this list** — the
+owner was explicit that the worker's signature must never land in someone
+else's box. A pad the person signed by hand is never overwritten by a copy.
+
 ## Service worker versioning — IMPORTANT
 `CACHE_NAME` in `service-worker.js` MUST be bumped on every deploy that
 changes `index.html`, or returning users will keep getting served the old
