@@ -1,12 +1,12 @@
 # Help tab reports: setup
 
-The app's **Help** tab has a "Report a problem" form (message, type, up to 3
+The app's **Help** page (the **?** icon at the top, next to refresh and share) has a "Report a problem" form (message, type, up to 3
 screenshots, optional name/contact). Reports go:
 
 ```
 Phone ─► Firestore (norwest-forms project: report + screenshots)
            ─► Cloud Function deliverHelpReport (australia-southeast1)
-                ├─► Nextcloud: <folder>/<date> #<ref> <type>/report.txt + shot-N.jpg + read-only share link
+                ├─► Nextcloud: PWA/Norwest-forms/<date> #<ref> <type>/report.txt + shot-N.jpg + read-only share link
                 ├─► Discord: message with the details, screenshots and the Nextcloud link
                 └─► deletes the screenshots from Firestore (keeps the small text record)
 ```
@@ -39,8 +39,8 @@ Webhook**. Name it "Norwest Forms", pick the channel, **Copy Webhook URL**.
 Don't paste it anywhere public: anyone with it can post as it or delete it.
 
 ### 3. Nextcloud
-1. Create a folder for reports, e.g. **Norwest Issues** (the function also
-   creates it if it's missing).
+1. Reports go in **PWA › Norwest-forms** (`/PWA/Norwest-forms`). The
+   function creates those folders if they're missing.
 2. **Personal settings → Security → Devices & sessions** → app name
    `norwest-forms` → **Create new app password**. Copy it.
    Use a new one, not myslewer's, so either can be revoked on its own.
@@ -53,7 +53,7 @@ npm install
 cp .env.example .env        # then edit .env:
 #   NEXTCLOUD_DOMAIN=https://<your nextcloud>   (no trailing slash)
 #   NEXTCLOUD_USERNAME=<your nextcloud username>
-#   NEXTCLOUD_REPORTS_PATH=/Norwest Issues
+#   NEXTCLOUD_REPORTS_PATH=/PWA/Norwest-forms
 cd ..
 firebase use norwest-forms
 firebase functions:secrets:set NEXTCLOUD_APP_PASSWORD   # paste the app password
@@ -73,7 +73,9 @@ usage log's rules exactly as they are.
 ### 5. Turn the form on
 Tell Claude (or edit it yourself): set `HELP_REPORTS_ENABLED = true` in
 `index.html`, bump the version, push to `main`. Then send a test report from
-the Help tab and check that Discord and Nextcloud both receive it.
+the Help page and check that Discord and Nextcloud both receive it. Once it
+works, send everyone a one-time pop-up (`#noticeModal`, new `NOTICE_ID`)
+pointing them to the **?** icon.
 
 ## Day to day
 - **Where reports land:** Discord (instant) and Nextcloud (permanent copy).

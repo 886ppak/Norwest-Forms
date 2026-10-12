@@ -218,7 +218,8 @@ Loose ends:
 
 ## 8b. Help tab reports
 
-Workers can send a problem report (with screenshots) from the **Help** tab.
+Workers can send a problem report (with screenshots) from the **?** icon
+(Help page) at the top of the app.
 It goes Firestore → Cloud Function `deliverHelpReport` → your Nextcloud
 folder + Discord channel. Full setup, statuses and troubleshooting:
 `docs/help-reports-setup.md`. Kill switch: `HELP_REPORTS_ENABLED` in

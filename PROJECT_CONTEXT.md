@@ -447,19 +447,19 @@ the modal text and change `NOTICE_ID` + `NOTICE_UNTIL`. First used in v1.29
 for the October 2026 job numbers outage.
 
 ## Help tab + issue reports (v1.32)
-`#helpView` (tab `helpTab`): Quick fixes FAQ plus a "Report a problem" form.
+`#helpView` (opened by the **?** header icon `#helpIconBtn`, not a form tab): Quick fixes FAQ plus a "Report a problem" form.
 `sendHelpReport()` writes screenshots to `helpReports/{ref}/shots/{0..2}` and
 then the report to `helpReports/{ref}` over the Firestore REST API (no login,
 same as `logUsageEvent`). `functions/index.js` `deliverHelpReport` (region
 australia-southeast1, matching the Firestore location) forwards each report
-to Nextcloud (WebDAV + read-only share link, ported from myslewer) and
+to Nextcloud under `/PWA/Norwest-forms` (WebDAV + read-only share link, ported from myslewer) and
 Discord (webhook with the images attached), then deletes the screenshots.
 Secrets (`DISCORD_WEBHOOK_URL`, `NEXTCLOUD_APP_PASSWORD`) live in Secret
 Manager; Nextcloud domain/user/path in `functions/.env` (gitignored). **Never
 put the webhook URL or Nextcloud credentials in index.html**: the page and
 repo are public. The form is hidden until `HELP_REPORTS_ENABLED = true`.
 Narrow phones (≤420px) show short tab labels (`.short`/`.full` spans) so
-NWP's 5 tabs fit. Setup and testing notes: `docs/help-reports-setup.md`.
+NWP's 4 tabs fit. Setup and testing notes: `docs/help-reports-setup.md`.
 
 ## Hosting
 Static GitHub Pages, repo root. Apps Script (job numbers) is Google's own

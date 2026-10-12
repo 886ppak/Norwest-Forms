@@ -34,7 +34,7 @@ initializeApp();
 
 const NEXTCLOUD_DOMAIN = defineString('NEXTCLOUD_DOMAIN');
 const NEXTCLOUD_USERNAME = defineString('NEXTCLOUD_USERNAME');
-const NEXTCLOUD_REPORTS_PATH = defineString('NEXTCLOUD_REPORTS_PATH', { default: '/Norwest Issues' });
+const NEXTCLOUD_REPORTS_PATH = defineString('NEXTCLOUD_REPORTS_PATH', { default: '/PWA/Norwest-forms' });
 const NEXTCLOUD_APP_PASSWORD = defineSecret('NEXTCLOUD_APP_PASSWORD');
 const DISCORD_WEBHOOK_URL = defineSecret('DISCORD_WEBHOOK_URL');
 
@@ -193,7 +193,10 @@ exports.deliverHelpReport = onDocumentCreated(
     try {
       const base = NEXTCLOUD_REPORTS_PATH.value().replace(/\/+$/, '');
       const folder = `${base}/${when.day} #${safe(r.ref || id)} ${safe(CATEGORY_LABELS[r.category] || r.category)}`;
-      await ncEnsureFolder(base);
+      // create each level (e.g. /PWA then /PWA/Norwest-forms) - MKCOL can't
+      // make a folder whose parent doesn't exist yet
+      let level = '';
+      for (const part of base.split('/').filter(Boolean)) { level += '/' + part; await ncEnsureFolder(level); }
       await ncEnsureFolder(folder);
       await ncUpload(`${folder}/report.txt`, Buffer.from(reportText(r, id, when), 'utf8'), 'text/plain; charset=utf-8');
       for (let i = 0; i < shots.length; i++) await ncUpload(`${folder}/shot-${i + 1}.jpg`, shots[i].bytes, 'image/jpeg');
