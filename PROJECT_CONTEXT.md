@@ -444,7 +444,9 @@ once per phone on next open, gone for good once dismissed (stored as
 `norwestNoticeSeen` = `NOTICE_ID`). Brand-new users still on the company
 picker skip it, and it stops after `NOTICE_UNTIL`. To send a new one, edit
 the modal text and change `NOTICE_ID` + `NOTICE_UNTIL`. First used in v1.29
-for the October 2026 job numbers outage.
+for the October 2026 job numbers outage; v1.35 reused it to announce the
+? Help page (`NOTICE_ID` `help-oct2026`, until 31 Dec 2026). `dismissNotice('help')`
+opens Help, `dismissNotice('refresh')` re-downloads job numbers.
 
 ## Help tab + issue reports (v1.32)
 `#helpView` (opened by the **?** header icon `#helpIconBtn`, not a form tab): Quick fixes FAQ plus a "Report a problem" form.
