@@ -1,0 +1,13 @@
+{
+  "name": "norwest-forms-functions",
+  "description": "Help-tab issue reports for Norwest Forms: Firestore -> Nextcloud + Discord",
+  "private": true,
+  "main": "index.js",
+  "engines": {
+    "node": "20"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.6.0",
+    "firebase-functions": "^5.1.1"
+  }
+}

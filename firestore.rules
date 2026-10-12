@@ -30,6 +30,47 @@ service cloud.firestore {
       allow get, list, update, delete: if false;
     }
 
+    // Help tab issue reports (index.html sendHelpReport -> functions/
+    // index.js deliverHelpReport). Same no-login, create-only, tightly
+    // shaped approach as submissions above: a client can file a report
+    // and nothing else. The function (admin, bypasses these rules)
+    // forwards it to Nextcloud + Discord and then deletes the screenshots.
+    match /helpReports/{reportId} {
+      allow create: if reportId.matches('[A-Z0-9]{6,12}')
+                     && request.resource.data.keys().hasOnly(['ref', 'category', 'message', 'name', 'contact', 'company', 'formTab', 'appVersion', 'jobNumbers', 'device', 'shotCount', 'createdAt'])
+                     && request.resource.data.keys().hasAll(['ref', 'category', 'message', 'shotCount', 'createdAt'])
+                     && request.resource.data.ref == reportId
+                     && request.resource.data.category in ['jobnumbers', 'pdf', 'looks', 'idea', 'other']
+                     && request.resource.data.message is string
+                     && request.resource.data.message.size() > 0
+                     && request.resource.data.message.size() <= 2000
+                     && (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 80))
+                     && (!('contact' in request.resource.data) || (request.resource.data.contact is string && request.resource.data.contact.size() <= 120))
+                     && (!('company' in request.resource.data) || (request.resource.data.company is string && request.resource.data.company.size() <= 10))
+                     && (!('formTab' in request.resource.data) || (request.resource.data.formTab is string && request.resource.data.formTab.size() <= 20))
+                     && (!('appVersion' in request.resource.data) || (request.resource.data.appVersion is string && request.resource.data.appVersion.size() <= 12))
+                     && (!('jobNumbers' in request.resource.data) || (request.resource.data.jobNumbers is string && request.resource.data.jobNumbers.size() <= 200))
+                     && (!('device' in request.resource.data) || (request.resource.data.device is string && request.resource.data.device.size() <= 400))
+                     && request.resource.data.shotCount is int
+                     && request.resource.data.shotCount >= 0
+                     && request.resource.data.shotCount <= 3
+                     && request.resource.data.createdAt is timestamp
+                     && request.resource.data.createdAt > request.time - duration.value(15, 'm')
+                     && request.resource.data.createdAt < request.time + duration.value(15, 'm');
+      allow get, list, update, delete: if false;
+
+      // Screenshots: base64 JPEG, written just before the report itself.
+      match /shots/{shotId} {
+        allow create: if shotId in ['0', '1', '2']
+                       && request.resource.data.keys().hasOnly(['data', 'type'])
+                       && request.resource.data.type == 'image/jpeg'
+                       && request.resource.data.data is string
+                       && request.resource.data.data.size() > 100
+                       && request.resource.data.data.size() <= 700000;
+        allow get, list, update, delete: if false;
+      }
+    }
+
     // Deny everything else outright - an explicit fallback rather than
     // relying on Firestore's own "no matching rule = denied" default, so
     // adding some unrelated collection later can't accidentally inherit
