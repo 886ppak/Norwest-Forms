@@ -45,30 +45,59 @@ Don't paste it anywhere public: anyone with it can post as it or delete it.
    `norwest-forms` → **Create new app password**. Copy it.
    Use a new one, not myslewer's, so either can be revoked on its own.
 
-### 4. Deploy (from the computer you deploy myslewer from)
-```bash
-git clone https://github.com/886ppak/Norwest-Forms   # or: git pull
-cd Norwest-Forms/functions
-npm install
-cp .env.example .env        # then edit .env:
-#   NEXTCLOUD_DOMAIN=https://<your nextcloud>   (no trailing slash)
-#   NEXTCLOUD_USERNAME=<your nextcloud username>
-#   NEXTCLOUD_REPORTS_PATH=/PWA/Norwest-forms
-cd ..
-firebase use norwest-forms
-firebase functions:secrets:set NEXTCLOUD_APP_PASSWORD   # paste the app password
-firebase functions:secrets:set DISCORD_WEBHOOK_URL      # paste the webhook URL
-firebase deploy --only functions,firestore:rules
-```
-The first deploy asks to enable a few Google APIs (Cloud Functions, Cloud
-Build, Artifact Registry, Eventarc, Cloud Scheduler, Secret Manager). Say
-yes. It deploys:
-- `deliverHelpReport`: runs on each new report
-- `cleanupOrphanHelpShots`: daily 3am Perth, removes screenshots whose
-  report never arrived
+### 4. Deploy (Google Cloud Shell, in the browser)
+No install needed. Cloud Shell is a browser terminal, already signed in as
+you, with the Firebase CLI (`firebase`, not `gcloud`) pre-installed. It's
+how myslewer's functions were first deployed too. Paste one command at a
+time and let each finish.
+
+1. Open https://shell.cloud.google.com as the Google account that owns the
+   `norwest-forms` Firebase project.
+2. ```
+   git clone https://github.com/886ppak/Norwest-Forms
+   ```
+   ```
+   cd Norwest-Forms/functions && npm install && cd ..
+   ```
+3. Nextcloud settings (not secret, but they stay out of the repo). Replace
+   the placeholders; the address has no trailing `/`:
+   ```
+   printf 'NEXTCLOUD_DOMAIN=https://YOUR-NEXTCLOUD\nNEXTCLOUD_USERNAME=YOUR-USERNAME\nNEXTCLOUD_REPORTS_PATH=/PWA/Norwest-forms\n' > functions/.env
+   ```
+4. ```
+   firebase login --no-localhost
+   ```
+   (open the link, approve, paste the code back)
+   ```
+   firebase use norwest-forms
+   ```
+5. Secrets: each asks you to paste the value, and nothing shows while you
+   paste.
+   ```
+   firebase functions:secrets:set NEXTCLOUD_APP_PASSWORD
+   ```
+   ```
+   firebase functions:secrets:set DISCORD_WEBHOOK_URL
+   ```
+6. ```
+   firebase deploy --only functions,firestore:rules
+   ```
+   Answer **y** to enabling Google APIs (Cloud Functions, Cloud Build,
+   Artifact Registry, Eventarc, Cloud Scheduler, Secret Manager). It should
+   end with **Deploy complete!** and list:
+   - `deliverHelpReport`: runs on each new report
+   - `cleanupOrphanHelpShots`: daily 3am Perth, removes screenshots whose
+     report never arrived
 
 `firestore:rules` publishes the rules from this repo, which also keep the
 usage log's rules exactly as they are.
+
+Later changes to `functions/` need the same `firebase deploy` again (Cloud
+Shell keeps the clone; `git pull` first). If deploys become frequent, a
+GitHub Action like myslewer's `.github/workflows/firebase-deploy.yml` can do
+it automatically on push. It needs a deploy service account key stored as a
+GitHub secret, and myslewer's experience is that the account ends up needing
+broad roles.
 
 ### 5. Turn the form on
 Tell Claude (or edit it yourself): set `HELP_REPORTS_ENABLED = true` in
