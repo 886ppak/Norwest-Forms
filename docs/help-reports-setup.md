@@ -129,3 +129,19 @@ pointing them to the **?** icon.
   screenshots removed from Firestore, status `delivered`.
 - Nextcloud down → `partial`, Discord still posted. Both down → `failed`,
   screenshots kept.
+
+## Usage log archive to Nextcloud (exportUsageToNextcloud)
+Same functions deploy, same Nextcloud app password. Every **Sunday 11:00
+Perth** it writes the usage log (`submissions/`) to
+`PWA/Norwest-forms/Usage/usage-YYYY-MM.csv`, one file per month. Columns:
+`perth_time, week_ending, late, form, company, name, ip` (medical rows have no
+name). Only this month's and last month's files are rewritten, so older months
+stay put as the permanent history. Firestore only keeps ~60 days and is what
+the live dashboard reads. To run it now (e.g. right after the first deploy):
+```
+gcloud scheduler jobs run firebase-schedule-exportUsageToNextcloud-australia-southeast1 --location australia-southeast1 --project norwest-forms
+```
+Tested (Oct 2026, Firestore emulator + stand-in Nextcloud): rows split into the
+right Perth month (a 1 Oct 01:00 timesheet goes in October), pay week and
+late flag correct, commas in names quoted, medical without a name, rows
+older than last month and the TEST record skipped.

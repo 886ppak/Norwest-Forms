@@ -249,3 +249,83 @@ exports.cleanupOrphanHelpShots = onSchedule(
     console.log(`Help shots cleanup: removed ${removed} orphan screenshot(s).`);
   }
 );
+
+// ---- Usage log -> Nextcloud (long-term history) --------------------------
+// Firestore keeps the usage log (submissions/) for ~60 days (expireAt + TTL)
+// and the admin dashboard reads it live from there. Once a week (Sunday
+// 11:00 Perth) this archives each month's rows to a CSV in Nextcloud:
+//   <NEXTCLOUD_REPORTS_PATH>/Usage/usage-YYYY-MM.csv
+// Only the current and previous Perth month are rewritten (whole file each
+// time - WebDAV has no append), so a month's last days are picked up by the
+// first run of the next month, older months' files are never touched, and
+// stay as the permanent history after Firestore expires the rows.
+// Medical claims stay anonymous (no name is ever logged for them).
+
+// Perth date parts for a JS Date (AWST, UTC+8, no daylight saving)
+function perthParts(date) {
+  const d = new Date(date.getTime() + 8 * 3600e3);
+  return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, iso: d.toISOString(), dow: d.getUTCDay(), hour: d.getUTCHours(), d };
+}
+// Timesheets are for the week ending Sunday, due Monday 10am Perth. A
+// submission belongs to the week ending the Sunday BEFORE its Monday
+// (Tue..Mon window); Monday from 10:00 counts as late. Same rule as
+// tools/usage-stats.mjs.
+function payWeek(date) {
+  const p = perthParts(date);
+  const e = new Date(p.d); e.setUTCDate(e.getUTCDate() - 1);
+  e.setUTCDate(e.getUTCDate() + ((7 - e.getUTCDay()) % 7));
+  return { weekEnding: e.toISOString().slice(0, 10), late: p.dow === 1 && p.hour >= 10 };
+}
+function csvCell(v) {
+  const s = String(v == null ? '' : v);
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function usageCsv(rows) {
+  const header = ['perth_time', 'week_ending', 'late', 'form', 'company', 'name', 'ip'];
+  const lines = rows.map(r => [r.perthTime, r.weekEnding, r.late ? 'yes' : '', r.formType, r.company, r.name, r.ip].map(csvCell).join(','));
+  return [header.join(','), ...lines].join('\r\n') + '\r\n';
+}
+
+async function exportUsage() {
+  const db = getFirestore();
+  const now = perthParts(new Date());
+  const prev = now.m === 1 ? { y: now.y - 1, m: 12 } : { y: now.y, m: now.m - 1 };
+  // start of the previous Perth month, as a real instant (Perth midnight = 16:00Z the day before)
+  const since = new Date(Date.UTC(prev.y, prev.m - 1, 1) - 8 * 3600e3);
+  const snap = await db.collection('submissions').where('submittedAt', '>=', Timestamp.fromDate(since)).get();
+
+  const months = {};
+  [prev, { y: now.y, m: now.m }].forEach(k => { months[`${k.y}-${String(k.m).padStart(2, '0')}`] = []; });
+  snap.docs.forEach(doc => {
+    const r = doc.data();
+    if (r.company === 'TEST') return; // Oct 2026 rules-check record
+    const at = r.submittedAt?.toDate ? r.submittedAt.toDate() : null;
+    if (!at) return;
+    const p = perthParts(at);
+    const key = `${p.y}-${String(p.m).padStart(2, '0')}`;
+    if (!months[key]) return;
+    const w = payWeek(at);
+    months[key].push({
+      at, perthTime: p.iso.slice(0, 16).replace('T', ' '), weekEnding: w.weekEnding, late: w.late,
+      formType: r.formType || '', company: r.company || '', name: (r.name || '').trim(), ip: r.ip || '',
+    });
+  });
+
+  const base = NEXTCLOUD_REPORTS_PATH.value().replace(/\/+$/, '');
+  const dir = `${base}/Usage`;
+  let level = '';
+  for (const part of dir.split('/').filter(Boolean)) { level += '/' + part; await ncEnsureFolder(level); }
+  const written = [];
+  for (const [key, rows] of Object.entries(months)) {
+    rows.sort((a, b) => a.at - b.at);
+    await ncUpload(`${dir}/usage-${key}.csv`, Buffer.from(usageCsv(rows), 'utf8'), 'text/csv; charset=utf-8');
+    written.push(`${key}: ${rows.length} row(s)`);
+  }
+  console.log(`Usage export to Nextcloud: ${written.join(', ')}`);
+  return written;
+}
+
+exports.exportUsageToNextcloud = onSchedule(
+  { schedule: '0 11 * * 0', timeZone: 'Australia/Perth', region: REGION, secrets: [NEXTCLOUD_APP_PASSWORD], timeoutSeconds: 120 },
+  async () => { await exportUsage(); }
+);

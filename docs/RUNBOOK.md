@@ -204,6 +204,10 @@ summarises each pay week (people, forms, who was late after Monday 10am).
 First week (week ending Sun 4 Oct 2026): 13 timesheets from 12 people (7 NWP,
 5 NCH), 3 after the Monday 10am deadline, no leave/training/medical forms.
 
+Long-term history: every Sunday 11:00 Perth the function
+`exportUsageToNextcloud` archives the log to Nextcloud as
+`PWA/Norwest-forms/Usage/usage-YYYY-MM.csv` (see docs/help-reports-setup.md).
+
 Loose ends:
 - A test record (`company: TEST`, name "TEST - Claude rules check, ignore")
   is in the collection. The tool skips it. Delete it in the Firebase console
