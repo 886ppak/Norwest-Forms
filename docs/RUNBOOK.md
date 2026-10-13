@@ -214,8 +214,9 @@ Long-term history: every Sunday 11:00 Perth the function
 `PWA/Norwest-forms/Usage/usage-YYYY-MM.csv` (see docs/help-reports-setup.md).
 
 Notes:
-- A test record (`company: TEST`, name "TEST - Claude rules check, ignore")
-  is in the collection. The tool and the dashboard skip it.
+- The Oct 2026 test record (`company: TEST`) and the test help reports
+  TESTAY1C / C7LUCT were deleted on 13 Oct 2026. The tool and dashboard
+  still skip any `company: TEST` row.
 - **TTL is on** (since 13 Oct 2026): `gcloud firestore fields ttls list
   --project norwest-forms` shows `expireAt` ACTIVE.
 - `firestore.rules`: the app can only create well-formed records; only the

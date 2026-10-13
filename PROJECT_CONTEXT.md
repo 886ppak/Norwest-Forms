@@ -519,8 +519,9 @@ and previous month are rewritten, older files are permanent).
 **Reading the stats:** `tools/usage-stats.mjs` (read-only, needs the
 service account JSON in `NORWEST_FORMS_SERVICE_ACCOUNT`) lists submissions in
 Perth time and summarises each pay week (week ending Sunday, due Monday
-10am AWST, late = Monday after 10am). It skips the one `company: TEST`
-record written while checking the live rules in Oct 2026. See RUNBOOK §8.
+10am AWST, late = Monday after 10am). It skips any `company: TEST`
+record (one was written while checking the live rules in Oct 2026;
+deleted 13 Oct 2026). See RUNBOOK §8.
 
 `firestore.rules` is create-only and tightly shaped for the app - a
 client can create a well-formed event document and nothing else. The only
@@ -537,7 +538,7 @@ this pay week (same pay-week rule as `tools/usage-stats.mjs` / `payWeek()`
 in functions), week-by-week table and per-person grid (names merged
 ignoring case, resends once), who's not in yet this week, forms
 breakdown, help reports with status/Nextcloud link, and health (this
-month's job numbers row, latest report status). The `company: TEST`
+month's job numbers row, latest report status). Any `company: TEST`
 record is excluded.
 
 **Access is locked by Firestore rules, not by hiding the page.** Anyone can
