@@ -35,6 +35,8 @@ in index.html.
 - `functions/`, `firebase.json`, `.firebaserc` — Cloud Function for Help tab
   reports (deploy with `firebase deploy --only functions,firestore:rules`).
 - `firestore.rules` — rules for the usage-logging Firestore project.
+- `admin.html` — the owner's private live stats dashboard (see "Admin
+  dashboard" below). Separate page so workers' phones never load it.
 
 ## Key implementation details worth knowing
 
@@ -470,7 +472,7 @@ project (`norwest-forms`) for usage logging only - see its own section
 below; it holds no form data, no PDFs, nothing from the actual timesheets/
 claims, just a bare event log.
 
-## Usage logging (temporary, ~2-month test)
+## Usage logging (ongoing)
 Person asked whether the app is actually getting used and by how much,
 given HR started asking for form changes (implying real usage) despite
 only a handful of people having the link. `logUsageEvent()` in index.html
@@ -478,7 +480,9 @@ fires a best-effort, fire-and-forget write to a separate Firebase project
 (`norwest-forms`, own Firebase project - NOT the same as any other app's)
 on every real "Submit & Send" (not the separate "Download PDF" buttons),
 recording just `formType` / `name` / `company` / `ip` / `submittedAt` /
-`expireAt`.
+`expireAt`. Started ~30 Sep 2026 as a 2-month test; since 13 Oct 2026 it's
+**ongoing until the owner switches it off** (partly to judge whether there's
+enough use to ask Norwest for Visual Dispatch API access later).
 
 Two things worth knowing if this ever needs touching:
 - **The Medical & D&A Allowance Claim form is deliberately logged WITHOUT
@@ -491,7 +495,8 @@ Two things worth knowing if this ever needs touching:
   thread a name through for this form without asking first.
 - **This is disclosed on the first-open company-picker screen**
   (`#companyGate`) - a one-line addition under the existing "not an
-  official system" disclaimer. Silently logging identifiable data (name +
+  official system" disclaimer ("Basic usage (which form, roughly how
+  often) is logged to help improve this tool."). Silently logging identifiable data (name +
   IP) without telling anyone was flagged as a real problem, not a detail -
   don't remove that disclosure line without replacing it with something
   equivalent, and don't add more logging elsewhere without extending it.
@@ -501,19 +506,15 @@ POST to the Firestore REST API (`logUsageEvent()`'s own comment explains
 why: zero other JS dependencies beyond jsPDF, not worth bloating for one
 write-only call). IP is self-reported by the client via ipify (a free,
 no-key, CORS-friendly "what's my public IP" lookup) - not independently
-verified server-side, since that would need a Cloud Function, which needs
-Firebase's paid Blaze plan; this project is on the free Spark plan and a
-self-reported IP is accurate enough for a usage-volume test.
+verified server-side; a self-reported IP is accurate enough for usage
+volume. (The project is on Blaze now for the Help-report functions.)
 
-`expireAt` is set 60 days out per event, meant to be paired with a
-Firestore TTL policy on that field so records auto-delete once the test
-window passes rather than accumulating personal data indefinitely. TTL
-couldn't be set via the admin API this round (403 - a genuine IAM gap on
-the project's auto-generated Firebase Admin SDK service account, not the
-same "not allowed to touch infra" block security-rules deploys hit) - if
-nobody's turned it on via Firestore console (Rules tab's sibling "TTL"
-tab, field `expireAt` on the `submissions` collection) by the time this
-test should end, delete the `submissions` collection manually instead.
+`expireAt` is set 60 days out per event, and a Firestore TTL policy on
+that field (switched on 13 Oct 2026, state ACTIVE) deletes each record
+after its 60 days, so names/IPs don't pile up in Firestore. Long-term
+history is the weekly Nextcloud export (`exportUsageToNextcloud`, Sunday
+11:00 Perth, `PWA/Norwest-forms/Usage/usage-YYYY-MM.csv`; only the current
+and previous month are rewritten, older files are permanent).
 
 **Reading the stats:** `tools/usage-stats.mjs` (read-only, needs the
 service account JSON in `NORWEST_FORMS_SERVICE_ACCOUNT`) lists submissions in
@@ -521,12 +522,41 @@ Perth time and summarises each pay week (week ending Sunday, due Monday
 10am AWST, late = Monday after 10am). It skips the one `company: TEST`
 record written while checking the live rules in Oct 2026. See RUNBOOK §8.
 
-`firestore.rules` in this repo (new file) is write-only and tightly
-shaped - a client can create a well-formed event document and nothing
-else, never read/list/update/delete. Needs to be published via the
-Firebase console's Rules tab for the `norwest-forms` project (same
-console-paste-and-publish step every rules change on the sibling
-myslewer project needs - couldn't be automated from here either).
+`firestore.rules` is create-only and tightly shaped for the app - a
+client can create a well-formed event document and nothing else. The only
+reads allowed are the owner's, from the admin dashboard (below). Deploy
+from pve: `firebase deploy --only firestore:rules --project norwest-forms`.
+
+## Admin dashboard (v1.36)
+`admin.html` (https://886ppak.github.io/Norwest-Forms/admin.html, or tap
+the version number top-left **5 times within ~3 s** in the app) is a live
+stats page for the owner only. It signs in with Google (Firebase Auth,
+popup with redirect fallback) and reads `submissions` and `helpReports`
+directly with `onSnapshot` (last ~70 days), so numbers are live. Shows
+this pay week (same pay-week rule as `tools/usage-stats.mjs` / `payWeek()`
+in functions), week-by-week table and per-person grid (names merged
+ignoring case, resends once), who's not in yet this week, forms
+breakdown, help reports with status/Nextcloud link, and health (this
+month's job numbers row, latest report status). The `company: TEST`
+record is excluded.
+
+**Access is locked by Firestore rules, not by hiding the page.** Anyone can
+load admin.html; `isAdmin()` in `firestore.rules` only allows `get`/`list`
+on `submissions` and `helpReports` for a signed-in token with
+`email_verified == true` and an email in its list (`myslewer@gmail.com`).
+The page has no email check of its own: a permission-denied answer shows
+"Not authorised". `helpReports/*/shots` stay unreadable; the app's
+no-login creates are unchanged. Workers never sign in.
+- **Add/remove an admin:** edit the email list in `isAdmin()` in
+  `firestore.rules`, then `firebase deploy --only firestore:rules --project
+  norwest-forms`. Nothing in admin.html needs changing.
+- `service-worker.js` never caches admin.html or anything it loads (checked
+  by URL and by the requesting client), so it's never stale.
+- Local testing: serve the repo on localhost and open
+  `admin.html?emulator` with the auth + firestore emulators running;
+  `emuSignIn(email, verified)` in the console signs in a fake account
+  (only exists in emulator mode).
+- `JOB_NUMBERS_URL` is duplicated in admin.html - keep both in sync.
 
 
 ## What NOT to change without asking

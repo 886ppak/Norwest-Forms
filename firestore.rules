@@ -5,15 +5,24 @@ rules_version = '2';
 // client writes are genuinely anonymous/unauthenticated. Write-only and
 // tightly shaped instead: a client can create a well-formed event
 // document and nothing else - never read, update, delete, or list this
-// collection (only an admin script with the project's own service
-// account, which bypasses these rules entirely, ever reads it back).
-// This is a temporary 2-month usage test (see index.html's
-// logUsageEvent), not a permanent feature - expireAt plus a Firestore
-// TTL policy on that field auto-deletes each record after its window,
-// so stale personal data doesn't just accumulate indefinitely once the
-// test is over.
+// collection. Reading is only for the owner's private admin dashboard
+// (isAdmin() below: a verified Google sign-in as the listed email) and
+// the service account (functions, tools/usage-stats.mjs), which bypasses
+// these rules. Usage logging is ongoing until the owner switches it off;
+// expireAt plus the Firestore TTL policy on that field deletes each
+// record after ~60 days (the weekly Nextcloud export keeps the history).
 service cloud.firestore {
   match /databases/{database}/documents {
+    // The one admin who may READ the usage log and help reports, from the
+    // private dashboard (admin.html, Google sign-in). Workers never sign in;
+    // their no-login creates below are unchanged. To add/remove an admin,
+    // edit this list and run: firebase deploy --only firestore:rules
+    function isAdmin() {
+      return request.auth != null
+             && request.auth.token.email_verified == true
+             && request.auth.token.email in ['myslewer@gmail.com'];
+    }
+
     match /submissions/{eventId} {
       allow create: if request.resource.data.keys().hasOnly(['formType', 'name', 'company', 'ip', 'submittedAt', 'expireAt'])
                      && request.resource.data.formType is string
@@ -27,7 +36,8 @@ service cloud.firestore {
                      && request.resource.data.submittedAt is timestamp
                      && request.resource.data.expireAt is timestamp
                      && request.resource.data.expireAt > request.resource.data.submittedAt;
-      allow get, list, update, delete: if false;
+      allow get, list: if isAdmin();
+      allow update, delete: if false;
     }
 
     // Help tab issue reports (index.html sendHelpReport -> functions/
@@ -57,7 +67,8 @@ service cloud.firestore {
                      && request.resource.data.createdAt is timestamp
                      && request.resource.data.createdAt > request.time - duration.value(15, 'm')
                      && request.resource.data.createdAt < request.time + duration.value(15, 'm');
-      allow get, list, update, delete: if false;
+      allow get, list: if isAdmin();
+      allow update, delete: if false;
 
       // Screenshots: base64 JPEG, written just before the report itself.
       match /shots/{shotId} {

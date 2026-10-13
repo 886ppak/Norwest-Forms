@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2026 886ppak. All rights reserved. See LICENSE. -->
+<!-- Private admin dashboard (owner only). Access is locked by Google sign-in
+     + firestore.rules (isAdmin()), not by hiding this page: anyone can load
+     it, but Firestore returns nothing unless the signed-in account is on the
+     rules' admin list. See docs/RUNBOOK.md "Admin dashboard". -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Norwest Forms admin</title>
+<meta name="theme-color" content="#14181f">
+<link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<style>
+  :root{
+    --ink:#14181f;
+    --paper:#f6f4ef;
+    --card:#ffffff;
+    --line:#d9d4c8;
+    --accent:#e8622c;
+    --accent-dark:#b8481c;
+    --good:#2f7a4f;
+    --bad:#c0392b;
+    --muted:#6b6459;
+    --mono: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
+    -webkit-tap-highlight-color:transparent; padding-bottom:40px;
+  }
+  .stickyBrand{
+    background:var(--ink); color:#fff; padding:10px 16px; display:flex; align-items:center; gap:10px;
+    position:sticky; top:0; z-index:5;
+  }
+  .stickyBrand img{ width:26px; height:26px; border-radius:6px; }
+  .stickyBrand .t{ font-weight:800; font-size:15px; letter-spacing:.01em; }
+  .stickyBrand .t small{ display:block; font-size:10px; color:#8a8f9c; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+  .stickyBrand .sp{ flex:1; }
+  .live{ font-size:10.5px; font-weight:700; color:#8a8f9c; white-space:nowrap; }
+  .live::before{ content:''; display:inline-block; width:7px; height:7px; border-radius:4px; background:#8a8f9c; margin-right:5px; vertical-align:1px; }
+  .live.on{ color:#7fd19b; } .live.on::before{ background:#3fbf6a; }
+  .hbtn{ background:#1f2530; color:#c8cbd2; border:1px solid #333a48; border-radius:8px; padding:6px 10px; font-size:12px; font-weight:700; }
+  main{ padding:14px 16px 0; max-width:720px; margin:0 auto; }
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:14px; }
+  .card h2{ margin:0 0 12px; font-size:12px; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); font-weight:800; }
+  .card h2 .sub{ text-transform:none; letter-spacing:0; font-weight:600; }
+  .muted{ color:var(--muted); }
+  .small{ font-size:12px; }
+  .tiles{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .tile{ background:var(--paper); border-radius:10px; padding:10px 8px; text-align:center; }
+  .tile b{ display:block; font-size:24px; font-weight:800; line-height:1.1; }
+  .tile span{ font-size:11px; color:var(--muted); font-weight:700; }
+  .tile.late b{ color:var(--accent-dark); }
+  .split{ display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  .pill{ font-size:12px; font-weight:700; background:var(--paper); border-radius:20px; padding:5px 10px; }
+  .pill.late{ background:#fde9e0; color:var(--accent-dark); }
+  .pill.ok{ background:#e3f1e8; color:var(--good); }
+  .scroll{ overflow-x:auto; -webkit-overflow-scrolling:touch; margin:0 -14px; padding:0 14px; }
+  table{ border-collapse:collapse; width:100%; font-size:13px; }
+  th, td{ padding:6px 5px; text-align:right; border-bottom:1px solid #eee9de; white-space:nowrap; }
+  th{ font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:800; }
+  th:first-child, td:first-child{ text-align:left; }
+  tr.cur td{ background:#fff6f1; font-weight:700; }
+  .grid td, .grid th{ text-align:center; padding:5px 3px; }
+  .grid td:first-child, .grid th:first-child{ text-align:left; position:sticky; left:0; background:var(--card); max-width:118px; overflow:hidden; text-overflow:ellipsis; padding-right:6px; }
+  .grid .co{ font-size:9.5px; color:var(--muted); font-weight:700; margin-left:3px; }
+  .mk{ display:inline-block; min-width:20px; border-radius:5px; font-size:11px; font-weight:800; padding:2px 3px; }
+  .mk.ok{ background:#e3f1e8; color:var(--good); }
+  .mk.late{ background:#fde9e0; color:var(--accent-dark); }
+  .mk.oth{ background:#eef0f4; color:#4a5263; }
+  .legend{ font-size:11px; color:var(--muted); margin-top:8px; line-height:1.7; }
+  ul.plain{ list-style:none; margin:0; padding:0; }
+  ul.plain li{ padding:7px 0; border-top:1px solid #eee9de; font-size:13.5px; display:flex; justify-content:space-between; gap:8px; }
+  ul.plain li:first-child{ border-top:none; }
+  .rep{ border-top:1px solid #eee9de; padding:10px 0; }
+  .rep:first-of-type{ border-top:none; padding-top:0; }
+  .rep .top{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:13px; }
+  .rep .ref{ font-family:var(--mono); font-weight:700; }
+  .rep .msg{ font-size:13px; margin-top:5px; white-space:pre-wrap; word-break:break-word; color:#3a362e; }
+  .rep .meta{ font-size:11.5px; color:var(--muted); margin-top:4px; word-break:break-word; }
+  .st{ font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; border-radius:5px; padding:2px 6px; background:#eef0f4; color:#4a5263; }
+  .st.delivered{ background:#e3f1e8; color:var(--good); }
+  .st.failed, .st.partial{ background:#fbe1dd; color:var(--bad); }
+  .st.throttled{ background:#fff1cc; color:#8a6100; }
+  .rep.bad{ background:#fff5f3; margin:0 -14px; padding:10px 14px; }
+  a{ color:var(--accent-dark); }
+  .health li span:last-child{ font-weight:700; text-align:right; }
+  .ok-t{ color:var(--good); } .bad-t{ color:var(--bad); }
+  .gate{ text-align:center; padding:40px 8px; }
+  .gate h1{ font-size:19px; margin:0 0 8px; }
+  .gate p{ color:var(--muted); font-size:14px; margin:0 0 20px; line-height:1.5; }
+  .btn{ display:inline-flex; align-items:center; gap:10px; padding:12px 18px; border-radius:10px; border:none; background:var(--accent); color:#fff; font-size:15px; font-weight:800; }
+  .btn.sec{ background:#1f2530; }
+  .err{ color:var(--bad); font-size:13px; margin-top:14px; }
+  .hidden{ display:none !important; }
+  @media (max-width:380px){ .tile b{ font-size:21px; } }
+</style>
+</head>
+<body>
+<div class="stickyBrand">
+  <img src="./icons/icon-192.png" alt="">
+  <div class="t">Norwest Forms<small>Admin</small></div>
+  <div class="sp"></div>
+  <span id="live" class="live hidden">live</span>
+  <button id="signOutBtn" class="hbtn hidden" type="button">Sign out</button>
+</div>
+
+<main>
+  <div id="gate" class="card gate">
+    <h1>Admin dashboard</h1>
+    <p>Private usage stats for Norwest Forms.<br>Owner only — sign in with Google.</p>
+    <button id="signInBtn" class="btn" type="button">Sign in with Google</button>
+    <div id="gateErr" class="err"></div>
+  </div>
+
+  <div id="denied" class="card gate hidden">
+    <h1>Not authorised</h1>
+    <p>Signed in as <b id="deniedEmail"></b>.<br>This account can't see the dashboard.</p>
+    <button id="deniedSignOut" class="btn sec" type="button">Sign out</button>
+  </div>
+
+  <div id="dash" class="hidden">
+    <div class="card">
+      <h2>This pay week <span class="sub" id="weekLabel"></span></h2>
+      <div class="tiles">
+        <div class="tile"><b id="tTs">–</b><span>timesheets</span></div>
+        <div class="tile"><b id="tPeople">–</b><span>people</span></div>
+        <div class="tile late"><b id="tLate">–</b><span>late</span></div>
+      </div>
+      <div class="split" id="weekSplit"></div>
+      <div class="small muted" id="weekDue" style="margin-top:10px;"></div>
+    </div>
+
+    <div class="card">
+      <h2>Not in yet this week <span class="sub" id="missingCount"></span></h2>
+      <ul class="plain" id="missingList"></ul>
+    </div>
+
+    <div class="card">
+      <h2>Week by week</h2>
+      <div class="scroll"><table id="weekTable"></table></div>
+      <div class="legend">◂ = this week. Sheets = timesheets. NCH/NWP = people who sent a timesheet. Week ending Sunday, due Monday 10:00 Perth. Submissions from Tuesday to Monday count for the Sunday before; Monday from 10:00 is late. People = distinct names (any named form).</div>
+    </div>
+
+    <div class="card">
+      <h2>Per person <span class="sub">(timesheets, last 8 weeks)</span></h2>
+      <div class="scroll"><table class="grid" id="personGrid"></table></div>
+      <div class="legend"><span class="mk ok">✓</span> on time &nbsp; <span class="mk late">L</span> late &nbsp; <span class="mk oth">lv</span>/<span class="mk oth">tr</span> leave / training only. Names merged ignoring case; a resend counts once.</div>
+    </div>
+
+    <div class="card">
+      <h2>Forms</h2>
+      <div class="scroll"><table id="formTable"></table></div>
+      <div class="legend">Medical claims are logged without a name (count only).</div>
+    </div>
+
+    <div class="card">
+      <h2>Help reports <span class="sub" id="repCount"></span></h2>
+      <div id="repList"></div>
+    </div>
+
+    <div class="card">
+      <h2>Health</h2>
+      <ul class="plain health" id="healthList"></ul>
+    </div>
+
+    <div class="card small muted">
+      Live data covers about the last 60 days (older records expire).
+      Older history: Nextcloud › PWA › Norwest-forms › Usage (<code>usage-YYYY-MM.csv</code>, updated every Sunday 11:00).
+      <div id="signedInAs" style="margin-top:6px;"></div>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut, connectAuthEmulator, signInWithCredential }
+  from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
+import { getFirestore, collection, query, where, orderBy, onSnapshot, Timestamp, connectFirestoreEmulator }
+  from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
+
+// Public web config (not a secret - access is enforced by firestore.rules).
+const firebaseConfig = {
+  apiKey: 'AIzaSyBLCCwJEBndZKfEODkKT8KN-OZY-85Kz_I',
+  authDomain: 'norwest-forms.firebaseapp.com',
+  projectId: 'norwest-forms',
+  appId: '1:1077512044401:web:67bdd20d7ab703d7e500d0',
+};
+// Same Apps Script endpoint as index.html's JOB_NUMBERS_URL - keep in sync.
+const JOB_NUMBERS_URL = "https://script.google.com/macros/s/AKfycbybxIi5mpwWfOangXUqF785UvoQl02v3ldL9mLWJZoWCwKIgEXq514M81OqQGymGL6EFQ/exec";
+const WINDOW_DAYS = 70;
+const GRID_WEEKS = 8;
+const FORMS = ['timesheet', 'leave', 'training', 'medical'];
+const CATEGORY = { jobnumbers: 'Job numbers', pdf: 'PDF / sending', looks: 'Looks wrong', idea: 'Idea / request', other: 'Other' };
+
+// Local testing against the Firebase emulators: http://localhost:PORT/admin.html?emulator
+const local = ['localhost', '127.0.0.1'].includes(location.hostname);
+const useEmu = local && new URLSearchParams(location.search).has('emulator');
+const app = initializeApp(useEmu ? { ...firebaseConfig, projectId: 'demo-norwest', apiKey: 'demo-key' } : firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+if (useEmu) {
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+  connectFirestoreEmulator(db, '127.0.0.1', 8080);
+  // test hook: sign in as any made-up Google account (the auth emulator accepts unsigned tokens)
+  window.emuSignIn = (email, verified = true) => signInWithCredential(auth, GoogleAuthProvider.credential(JSON.stringify({ sub: email + (verified ? '' : '-unverified'), email, email_verified: verified })));
+}
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const show = (id, on) => $(id).classList.toggle('hidden', !on);
+
+// ---- Perth time + pay week (same rule as tools/usage-stats.mjs and
+// payWeek() in functions/index.js). Perth = AWST, UTC+8, no daylight saving.
+// A "Perth date" is a Date shifted +8h so its UTC fields read as Perth time.
+const perth = d => new Date(d.getTime() + 8 * 3600e3);
+function payWeek(d) {
+  const p = perth(d);
+  const e = new Date(p); e.setUTCDate(e.getUTCDate() - 1);           // Mon -> Sun
+  e.setUTCDate(e.getUTCDate() + ((7 - e.getUTCDay()) % 7));          // next Sunday on/after
+  return { weekEnding: e.toISOString().slice(0, 10), late: p.getUTCDay() === 1 && p.getUTCHours() >= 10 };
+}
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const fmtWeek = iso => { const [y, m, d] = iso.split('-').map(Number); return `${d} ${MON[m - 1]}`; };
+const fmtPerth = d => { const p = perth(d); return `${DOW[p.getUTCDay()]} ${p.getUTCDate()} ${MON[p.getUTCMonth()]} ${String(p.getUTCHours()).padStart(2, '0')}:${String(p.getUTCMinutes()).padStart(2, '0')}`; };
+const addDaysISO = (iso, n) => { const [y, m, d] = iso.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10); };
+const nameKey = n => (n || '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+// ---- state
+let subs = [], reports = [], subsLive = false, repsLive = false, gotData = false;
+let jobHealth = { state: 'loading' };
+let unsubs = [];
+
+// ---- auth
+const provider = new GoogleAuthProvider();
+provider.setCustomParameters({ prompt: 'select_account' });
+
+$('signInBtn').onclick = async () => {
+  $('gateErr').textContent = '';
+  try {
+    await signInWithPopup(auth, provider);
+  } catch (e) {
+    // Popup blocked / not supported (some iOS Safari setups): fall back to a full-page redirect.
+    if (['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment', 'auth/web-storage-unsupported'].includes(e.code)) {
+      try { await signInWithRedirect(auth, provider); return; } catch (e2) { e = e2; }
+    }
+    if (e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') {
+      $('gateErr').textContent = 'Sign-in failed: ' + (e.code || e.message);
+    }
+  }
+};
+getRedirectResult(auth).catch(e => { $('gateErr').textContent = 'Sign-in failed: ' + (e.code || e.message); });
+const doSignOut = () => signOut(auth);
+$('signOutBtn').onclick = doSignOut;
+$('deniedSignOut').onclick = doSignOut;
+
+onAuthStateChanged(auth, user => {
+  unsubs.forEach(u => u()); unsubs = [];
+  subs = []; reports = []; subsLive = repsLive = gotData = false;
+  show('signOutBtn', !!user);
+  show('live', false);
+  if (!user) { show('gate', true); show('denied', false); show('dash', false); return; }
+  show('gate', false);
+  $('signedInAs').textContent = 'Signed in as ' + user.email;
+  // No client-side email check: firestore.rules is the only gate. A
+  // permission-denied answer from either listener means "not an admin".
+  show('dash', false); show('denied', false);
+  start(user);
+});
+
+function denied(user) {
+  unsubs.forEach(u => u()); unsubs = []; gotData = false;
+  $('deniedEmail').textContent = user.email || '(no email)';
+  show('dash', false); show('live', false); show('denied', true);
+}
+
+function start(user) {
+  const since = Timestamp.fromDate(new Date(Date.now() - WINDOW_DAYS * 864e5));
+  const onErr = e => { if (e.code === 'permission-denied') denied(user); else console.error(e); };
+  unsubs.push(onSnapshot(query(collection(db, 'submissions'), where('submittedAt', '>=', since), orderBy('submittedAt')),
+    { includeMetadataChanges: true },
+    snap => {
+      subs = snap.docs.map(d => d.data())
+        .filter(r => r.company !== 'TEST' && r.submittedAt)          // the Oct 2026 rules-check record
+        .map(r => ({ ...r, at: r.submittedAt.toDate() }));
+      subsLive = !snap.metadata.fromCache; gotData = true;
+      render();
+    }, onErr));
+  unsubs.push(onSnapshot(query(collection(db, 'helpReports'), where('createdAt', '>=', since), orderBy('createdAt', 'desc')),
+    { includeMetadataChanges: true },
+    snap => {
+      reports = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      repsLive = !snap.metadata.fromCache; gotData = true;
+      render();
+    }, onErr));
+  loadJobNumbers();
+}
+
+async function loadJobNumbers() {
+  const p = perth(new Date());
+  const month = `${String(p.getUTCMonth() + 1).padStart(2, '0')}-${p.getUTCFullYear()}`;
+  jobHealth = { state: 'loading', month };
+  try {
+    const res = await fetch(JOB_NUMBERS_URL, { cache: 'no-store' });
+    const rows = await res.json();
+    const row = Array.isArray(rows) && rows.find(r => String(r.Month).trim() === month);
+    jobHealth = { state: row ? 'ok' : 'missing', month, row };
+  } catch (e) {
+    jobHealth = { state: 'error', month, error: e.message };
+  }
+  render();
+}
+
+// ---- render
+function render() {
+  if (!gotData) return;               // nothing until Firestore has answered (and allowed) a read
+  show('dash', true);
+  $('live').classList.toggle('on', subsLive && repsLive);
+  $('live').textContent = subsLive && repsLive ? 'live' : 'connecting…';
+  show('live', true);
+
+  const now = new Date();
+  const cur = payWeek(now).weekEnding;
+  const weeks = [];
+  for (let i = 0; i < GRID_WEEKS; i++) weeks.push(addDaysISO(cur, -7 * i));   // newest first
+
+  // group submissions by pay week
+  const byWeek = {};
+  for (const r of subs) {
+    const w = payWeek(r.at);
+    (byWeek[w.weekEnding] ||= []).push({ ...r, late: w.late, key: nameKey(r.name) });
+  }
+  const weekStats = we => {
+    const list = byWeek[we] || [];
+    const ts = list.filter(r => r.formType === 'timesheet');
+    const people = new Set(list.map(r => r.key).filter(Boolean));
+    const forms = Object.fromEntries(FORMS.map(f => [f, list.filter(r => r.formType === f).length]));
+    const tsPeople = co => new Set(ts.filter(r => r.company === co).map(r => r.key).filter(Boolean)).size;
+    return { list, ts: ts.length, people: people.size, late: ts.filter(r => r.late).length, onTime: ts.filter(r => !r.late).length,
+      forms, nch: tsPeople('NCH'), nwp: tsPeople('NWP') };
+  };
+
+  // display name per person: the spelling they used most (latest wins ties)
+  const spell = {}, company = {};
+  for (const r of subs) {
+    const k = nameKey(r.name); if (!k) continue;
+    const s = (spell[k] ||= {}); const n = r.name.trim().replace(/\s+/g, ' ');
+    s[n] = (s[n] || 0) + 1; company[k] = r.company;
+  }
+  const display = k => Object.entries(spell[k]).sort((a, b) => b[1] - a[1])[0][0];
+
+  // ---- this pay week
+  const cw = weekStats(cur);
+  $('weekLabel').textContent = `(ending Sun ${fmtWeek(cur)})`;
+  $('tTs').textContent = cw.ts; $('tPeople').textContent = cw.people; $('tLate').textContent = cw.late;
+  const other = ['leave', 'training', 'medical'].filter(f => cw.forms[f]).map(f => `${cw.forms[f]} ${f}`);
+  $('weekSplit').innerHTML =
+    `<span class="pill">NCH ${cw.nch}</span><span class="pill">NWP ${cw.nwp}</span>` +
+    `<span class="pill ok">${cw.onTime} on time</span><span class="pill late">${cw.late} late</span>` +
+    other.map(o => `<span class="pill">+ ${esc(o)}</span>`).join('');
+  const dueMon = addDaysISO(cur, 1);
+  const p = perth(now);
+  const nowISO = p.toISOString().slice(0, 10);
+  const open = nowISO < dueMon || (nowISO === dueMon && p.getUTCHours() < 10);
+  $('weekDue').textContent = `Due Mon ${fmtWeek(dueMon)} 10:00 Perth` + (open ? '' : ' — now late') + `. NCH/NWP = people who sent a timesheet.`;
+
+  // ---- not in yet
+  const thisWeekKeys = new Set(cw.list.map(r => r.key).filter(Boolean));
+  const lastSeen = {};
+  for (const we of Object.keys(byWeek)) if (we < cur) for (const r of byWeek[we]) if (r.key && (!lastSeen[r.key] || lastSeen[r.key] < we)) lastSeen[r.key] = we;
+  const missing = Object.keys(lastSeen).filter(k => !thisWeekKeys.has(k)).sort((a, b) => lastSeen[b].localeCompare(lastSeen[a]) || display(a).localeCompare(display(b)));
+  $('missingCount').textContent = `(${missing.length})`;
+  $('missingList').innerHTML = missing.length
+    ? missing.map(k => `<li><span>${esc(display(k))} <span class="muted small">${esc(company[k] || '')}</span></span><span class="muted small">last: w/e ${fmtWeek(lastSeen[k])}</span></li>`).join('')
+    : '<li class="muted">Everyone seen before has sent something this week.</li>';
+
+  // ---- week table
+  $('weekTable').innerHTML = '<tr><th>W/e</th><th>Sheets</th><th>People</th><th>Late</th><th>NCH</th><th>NWP</th><th>Other</th></tr>' +
+    weeks.map(we => {
+      const s = weekStats(we);
+      const oth = s.forms.leave + s.forms.training + s.forms.medical;
+      return `<tr class="${we === cur ? 'cur' : ''}"><td>${fmtWeek(we)}${we === cur ? ' ◂' : ''}</td><td>${s.ts}</td><td>${s.people}</td><td>${s.late || ''}</td><td>${s.nch}</td><td>${s.nwp}</td><td>${oth || ''}</td></tr>`;
+    }).join('');
+
+  // ---- per-person grid (newest week first, so this week is visible on a phone)
+  const gridWeeks = weeks;
+  const keys = Object.keys(spell).sort((a, b) => display(a).localeCompare(display(b)));
+  $('personGrid').innerHTML = '<tr><th>Name</th>' + gridWeeks.map(we => `<th>${fmtWeek(we).replace(' ', '<br>')}</th>`).join('') + '</tr>' +
+    (keys.length ? keys.map(k => '<tr><td>' + esc(display(k)) + `<span class="co">${esc(company[k] || '')}</span></td>` + gridWeeks.map(we => {
+      const mine = (byWeek[we] || []).filter(r => r.key === k);
+      const ts = mine.filter(r => r.formType === 'timesheet');
+      if (ts.length) return ts.some(r => !r.late) ? '<td><span class="mk ok">✓</span></td>' : '<td><span class="mk late">L</span></td>';
+      if (mine.some(r => r.formType === 'leave')) return '<td><span class="mk oth">lv</span></td>';
+      if (mine.some(r => r.formType === 'training')) return '<td><span class="mk oth">tr</span></td>';
+      return '<td></td>';
+    }).join('') + '</tr>').join('') : `<tr><td colspan="${GRID_WEEKS + 1}" class="muted">No submissions yet.</td></tr>`);
+
+  // ---- forms
+  const allForms = Object.fromEntries(FORMS.map(f => [f, subs.filter(r => r.formType === f).length]));
+  const byCo = (f, co) => subs.filter(r => r.formType === f && r.company === co).length;
+  $('formTable').innerHTML = '<tr><th>Form</th><th>This week</th><th>NCH</th><th>NWP</th><th>All (~60 d)</th></tr>' +
+    FORMS.map(f => `<tr><td>${f[0].toUpperCase() + f.slice(1)}</td><td>${cw.forms[f]}</td><td>${byCo(f, 'NCH')}</td><td>${byCo(f, 'NWP')}</td><td>${allForms[f]}</td></tr>`).join('');
+
+  // ---- help reports
+  $('repCount').textContent = `(${reports.length})`;
+  $('repList').innerHTML = reports.length ? reports.map(r => {
+    const when = r.createdAt ? fmtPerth(r.createdAt.toDate()) : '';
+    const st = r.status || 'pending';
+    const bad = st === 'failed' || st === 'partial';
+    const who = [r.name, r.company, r.contact].filter(Boolean).join(' · ');
+    const meta = [who, r.formTab && ('tab ' + r.formTab), r.appVersion, r.shotCount ? `${r.shotCount} screenshot(s)` : '', r.jobNumbers && ('job nos: ' + r.jobNumbers)].filter(Boolean).join(' · ');
+    const errs = Array.isArray(r.errors) && r.errors.length ? `<div class="meta bad-t">${esc(r.errors.join('; '))}</div>` : '';
+    return `<div class="rep${bad ? ' bad' : ''}"><div class="top"><span class="ref">#${esc(r.ref || r.id)}</span><span class="muted">${esc(when)}</span>` +
+      `<span>${esc(CATEGORY[r.category] || r.category)}</span><span class="st ${esc(st)}">${esc(st)}</span>` +
+      (r.nextcloudUrl ? `<a href="${esc(r.nextcloudUrl)}" target="_blank" rel="noopener">Nextcloud</a>` : '') + '</div>' +
+      `<div class="msg">${esc(r.message)}</div>` + (meta ? `<div class="meta">${esc(meta)}</div>` : '') + errs + '</div>';
+  }).join('') : '<div class="muted small">No help reports in the last ~60 days.</div>';
+
+  // ---- health
+  const h = [];
+  const jh = jobHealth;
+  h.push(['Job numbers for ' + (jh.month || 'this month'),
+    jh.state === 'ok' ? '<span class="ok-t">present</span>'
+      : jh.state === 'missing' ? '<span class="bad-t">MISSING</span>'
+      : jh.state === 'error' ? `<span class="bad-t">couldn't fetch</span>` : '<span class="muted">checking…</span>']);
+  const lr = reports[0];
+  h.push(['Latest help report', lr ? `<span class="${lr.status === 'delivered' ? 'ok-t' : 'bad-t'}">#${esc(lr.ref || lr.id)} ${esc(lr.status || 'pending')}</span>` : '<span class="muted">none</span>']);
+  const problems = reports.filter(r => r.status === 'failed' || r.status === 'partial').length;
+  h.push(['Failed / partial reports', problems ? `<span class="bad-t">${problems}</span>` : '<span class="ok-t">0</span>']);
+  const last = subs[subs.length - 1];
+  h.push(['Last submission', last ? esc(fmtPerth(last.at)) : '<span class="muted">none</span>']);
+  $('healthList').innerHTML = h.map(([a, b]) => `<li><span>${esc(a)}</span><span>${b}</span></li>`).join('');
+}
+
+// keep "this week" / "now late" correct if the page stays open over a boundary
+setInterval(render, 5 * 60e3);
+</script>
+</body>
+</html>

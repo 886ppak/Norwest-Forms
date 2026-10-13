@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norwest-timesheet-v77';
+const CACHE_NAME = 'norwest-timesheet-v78';
 const APP_SHELL = [
   './',
   './index.html',
@@ -38,9 +38,22 @@ self.addEventListener('activate', event => {
 // Cache-first: serve from cache instantly if we have it, otherwise fetch from the
 // network and store a copy for next time. Falls back to the cached app shell if
 // totally offline and the request isn't cached yet.
+// The private admin dashboard (admin.html) is never cached: the page itself and
+// everything it loads (Firebase SDK, live Firestore, job numbers) go straight to
+// the network, so it can't be served stale. Workers' phones never open it.
+const isAdminUrl = url => new URL(url).pathname.endsWith('/admin.html');
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
-  event.respondWith(
+  if (isAdminUrl(event.request.url)) return;
+  event.respondWith((async () => {
+    const client = event.clientId && await self.clients.get(event.clientId);
+    if (client && isAdminUrl(client.url)) return fetch(event.request);
+    return appResponse(event);
+  })());
+});
+
+function appResponse(event) {
+  return (
     caches.match(event.request).then(cached => {
       if (cached) return cached;
       return fetch(event.request)
@@ -54,4 +67,4 @@ self.addEventListener('fetch', event => {
         .catch(() => caches.match('./index.html'));
     })
   );
-});
+}

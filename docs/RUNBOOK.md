@@ -17,7 +17,8 @@ the week ending **Sunday** and are due by **Monday 10am**.
 | Job numbers sheet | Google Sheet with a `JobNumbers` tab, in the Google account that receives Norwest's "Visual Dispatch" emails | One row per month: `Month, Port Hedland, Newman, Flights, Logistics, Medicals` |
 | Job Numbers API | Apps Script project **"Job Numbers API"**, inside that sheet (Extensions → Apps Script). Source: `apps-script/JobNumbers.gs` | Serves the sheet to the app, reads the monthly email, emails you if a month is missing |
 | Gmail filter + label | Same Google account. Label `Process-JobNumbers` | Marks the monthly email so the script picks it up |
-| Usage log | Firebase project `norwest-forms`, Firestore collection `submissions` | One record per real "Submit & Send" (temporary test) |
+| Usage log | Firebase project `norwest-forms`, Firestore collection `submissions` | One record per real "Submit & Send" (ongoing; ~60 days kept, weekly archive to Nextcloud) |
+| Admin dashboard | `admin.html` in this repo (owner only, Google sign-in) | Live usage stats + help reports. See section 8c |
 
 The app reads job numbers from the URL in `JOB_NUMBERS_URL` in `index.html`.
 Current deployment (Oct 2026):
@@ -185,13 +186,17 @@ notification server and every worker opting in).
 
 ---
 
-## 8. Usage stats (temporary, started ~30 Sep 2026)
+## 8. Usage stats (ongoing since ~30 Sep 2026)
 
 Every real "Submit & Send" logs form type, name, company, IP and time to
 Firestore. The Medical & D&A claim is logged **without a name** on purpose.
-Records carry `expireAt` (60 days).
+Records carry `expireAt` (60 days) and the TTL policy deletes them after
+that. Logging keeps going until the owner switches it off (to stop it,
+remove the `logUsageEvent(...)` calls in `index.html` and update the
+company-picker disclosure). The disclosure on the company picker must stay
+while it runs.
 
-To see the numbers:
+Easiest way to see the numbers: the admin dashboard (8c). From a terminal:
 ```
 NORWEST_FORMS_SERVICE_ACCOUNT="$(cat key.json)" node tools/usage-stats.mjs
 ```
@@ -208,15 +213,13 @@ Long-term history: every Sunday 11:00 Perth the function
 `exportUsageToNextcloud` archives the log to Nextcloud as
 `PWA/Norwest-forms/Usage/usage-YYYY-MM.csv` (see docs/help-reports-setup.md).
 
-Loose ends:
+Notes:
 - A test record (`company: TEST`, name "TEST - Claude rules check, ignore")
-  is in the collection. The tool skips it. Delete it in the Firebase console
-  if you like.
-- **TTL isn't confirmed on.** Firebase console → Firestore → TTL → add a
-  policy on `expireAt` for `submissions`, or delete the collection when the
-  test ends, so names and IPs don't pile up.
-- `firestore.rules` (write-only, tightly shaped) is published; reads and
-  malformed writes are refused.
+  is in the collection. The tool and the dashboard skip it.
+- **TTL is on** (since 13 Oct 2026): `gcloud firestore fields ttls list
+  --project norwest-forms` shows `expireAt` ACTIVE.
+- `firestore.rules`: the app can only create well-formed records; only the
+  admin (8c) can read; malformed writes, updates and deletes are refused.
 
 ---
 
@@ -228,6 +231,33 @@ It goes Firestore → Cloud Function `deliverHelpReport` → your Nextcloud
 folder + Discord channel. Full setup, statuses and troubleshooting:
 `docs/help-reports-setup.md`. Kill switch: `HELP_REPORTS_ENABLED` in
 `index.html`.
+
+## 8c. Admin dashboard
+
+**Where:** https://886ppak.github.io/Norwest-Forms/admin.html (bookmark it),
+or in the app tap the version number top-left **5 times quickly**.
+Sign in with Google as `myslewer@gmail.com`. Everything on it is live
+(straight from Firestore): this pay week, week by week, per person, who's
+not in yet, forms, help reports (failed/partial highlighted, Nextcloud
+links) and health (this month's job numbers, latest report). Firestore
+only holds ~60 days; older history is in Nextcloud › PWA › Norwest-forms ›
+Usage.
+
+**How it's locked:** Google sign-in + `firestore.rules` (`isAdmin()`: a
+verified Google account whose email is in the list). Any other account
+gets "Not authorised" and Firestore returns nothing; the page being public
+doesn't matter.
+
+**Add or remove an admin:** edit the email list in `isAdmin()` in
+`firestore.rules`, push, then from pve:
+```
+cd ~/Norwest-Forms && git pull
+firebase deploy --only firestore:rules --project norwest-forms
+```
+
+**Sign-in broken?** Firebase console → norwest-forms → Authentication →
+Sign-in method: Google must be enabled; Settings → Authorized domains must
+include `886ppak.github.io`.
 
 ## 9. Ideas not done yet
 
