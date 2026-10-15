@@ -18,7 +18,7 @@ the week ending **Sunday** and are due by **Monday 10am**.
 | Job Numbers API | Apps Script project **"Job Numbers API"**, inside that sheet (Extensions → Apps Script). Source: `apps-script/JobNumbers.gs` | Serves the sheet to the app, reads the monthly email, emails you if a month is missing |
 | Gmail filter + label | Same Google account. Label `Process-JobNumbers` | Marks the monthly email so the script picks it up |
 | Usage log | Firebase project `norwest-forms`, Firestore collection `submissions` | One record per real "Submit & Send" (ongoing; ~60 days kept, weekly archive to Nextcloud) |
-| Admin dashboard | `admin.html` in this repo (owner only, Google sign-in) | Live usage stats + help reports. See section 8c |
+| Admin dashboard | `admin.html` in this repo (owner only, Google or passkey sign-in) | Live usage stats + help reports. See section 8c |
 
 The app reads job numbers from the URL in `JOB_NUMBERS_URL` in `index.html`.
 Current deployment (Oct 2026):
@@ -237,28 +237,47 @@ folder + Discord channel. Full setup, statuses and troubleshooting:
 
 **Where:** https://886ppak.github.io/Norwest-Forms/admin.html (bookmark it),
 or in the app tap the version number top-left **5 times quickly**.
-Sign in with Google as `myslewer@gmail.com`. Everything on it is live
+Sign in with Google as `myslewer@gmail.com`, or tap **Sign in with
+passkey** (the homelab's Authentik at login.15buzza.au, accounts 15buzza or
+myslewer@gmail.com - whichever has a passkey saved). Everything on it is live
 (straight from Firestore): this pay week, week by week, per person, who's
 not in yet, forms, help reports (failed/partial highlighted, Nextcloud
 links) and health (this month's job numbers, latest report). Firestore
 only holds ~60 days; older history is in Nextcloud › PWA › Norwest-forms ›
 Usage.
 
-**How it's locked:** Google sign-in + `firestore.rules` (`isAdmin()`: a
-verified Google account whose email is in the list). Any other account
-gets "Not authorised" and Firestore returns nothing; the page being public
-doesn't matter.
+**How it's locked:** sign-in + `firestore.rules` (`isAdmin()`: a verified
+sign-in whose email is in the list - `myslewer@gmail.com`,
+`15buzza@gmail.com`). Any other account gets "Not authorised" and
+Firestore returns nothing; the page being public doesn't matter.
+
+**Passkey sign-in** (free - no Firebase add-on; same design as myslewer's
+passkey button): the button sends you to Authentik app **norwest-admin**
+(public OIDC client, PKCE, straight to the passkey prompt; only users
+`15buzza` and `myslewer@gmail.com` are bound to it). Authentik returns
+to admin.html with a one-time code; the `adminPasskeySignIn` function
+(australia-southeast1) swaps it for the account's email, checks it's in
+`ADMIN_EMAILS`, and returns a one-time Firebase email sign-in link that the
+page completes straight away (nothing is emailed). Needs Firebase
+Authentication → Sign-in method → **Email/Password → Email link** enabled.
+To add a passkey: log in at login.15buzza.au → Settings → MFA Devices →
+WebAuthn → Add.
 
 **Add or remove an admin:** edit the email list in `isAdmin()` in
-`firestore.rules`, push, then from pve:
+`firestore.rules` AND `ADMIN_EMAILS` in `functions/index.js` (passkey
+sign-in), and for passkeys bind the Authentik user to app norwest-admin.
+Push, then from pve:
 ```
 cd ~/Norwest-Forms && git pull
-firebase deploy --only firestore:rules --project norwest-forms
+firebase deploy --only firestore:rules,functions:adminPasskeySignIn --project norwest-forms
 ```
 
 **Sign-in broken?** Firebase console → norwest-forms → Authentication →
-Sign-in method: Google must be enabled; Settings → Authorized domains must
-include `886ppak.github.io`.
+Sign-in method: Google (and Email/Password with Email link, for passkeys)
+must be enabled; Settings → Authorized domains must include
+`886ppak.github.io`. Passkey errors: Firebase console → Functions →
+`adminPasskeySignIn` → Logs; Authentik app norwest-admin must still exist
+with redirect URI `https://886ppak.github.io/Norwest-Forms/admin.html`.
 
 ## 9. Ideas not done yet
 

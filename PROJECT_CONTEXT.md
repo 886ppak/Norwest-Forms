@@ -532,7 +532,8 @@ from pve: `firebase deploy --only firestore:rules --project norwest-forms`.
 `admin.html` (https://886ppak.github.io/Norwest-Forms/admin.html, or tap
 the version number top-left **5 times within ~3 s** in the app) is a live
 stats page for the owner only. It signs in with Google (Firebase Auth,
-popup with redirect fallback) and reads `submissions` and `helpReports`
+popup with redirect fallback) or a passkey through the homelab's Authentik
+(see "Passkey sign-in" below) and reads `submissions` and `helpReports`
 directly with `onSnapshot` (last ~70 days), so numbers are live. Shows
 this pay week (same pay-week rule as `tools/usage-stats.mjs` / `payWeek()`
 in functions), week-by-week table and per-person grid (names merged
@@ -544,13 +545,31 @@ record is excluded.
 **Access is locked by Firestore rules, not by hiding the page.** Anyone can
 load admin.html; `isAdmin()` in `firestore.rules` only allows `get`/`list`
 on `submissions` and `helpReports` for a signed-in token with
-`email_verified == true` and an email in its list (`myslewer@gmail.com`).
+`email_verified == true` and an email in its list (`myslewer@gmail.com`,
+`15buzza@gmail.com` - both the owner's).
 The page has no email check of its own: a permission-denied answer shows
 "Not authorised". `helpReports/*/shots` stay unreadable; the app's
 no-login creates are unchanged. Workers never sign in.
 - **Add/remove an admin:** edit the email list in `isAdmin()` in
-  `firestore.rules`, then `firebase deploy --only firestore:rules --project
-  norwest-forms`. Nothing in admin.html needs changing.
+  `firestore.rules` and `ADMIN_EMAILS` in `functions/index.js`, then
+  `firebase deploy --only firestore:rules,functions:adminPasskeySignIn
+  --project norwest-forms`. Nothing in admin.html needs changing.
+- **Passkey sign-in (Oct 2026):** copied from the myslewer app so it costs
+  nothing (custom OIDC providers in Firebase would need the paid Identity
+  Platform upgrade). Authentik app `norwest-admin` on login.15buzza.au is a
+  public OIDC client (PKCE, no secret; client id in admin.html and
+  functions) whose login flow is passkey-only, and only the owner's two
+  Authentik users are bound to it. admin.html → Authentik → back with
+  `?code=&state=` → `adminPasskeySignIn` (onRequest, CORS = the Pages
+  origin) swaps code + verifier at Authentik's token endpoint, reads the
+  email from userinfo, checks `ADMIN_EMAILS`, and returns
+  `generateSignInWithEmailLink(...)`; the page calls `signInWithEmailLink`.
+  The email link proves the address to Firebase (email_verified true), and
+  `isAdmin()` stays the real gate. Requires Email link sign-in enabled in
+  Firebase Auth. Emulator test: `AUTHENTIK_URL`/`ADMIN_PAGE_URL` are
+  `defineString`s (defaults = production) so `.env.local` can point them at a
+  stand-in; in `?emulator` mode the page uses the functions emulator and a
+  `?emulator` redirect URI.
 - `service-worker.js` never caches admin.html or anything it loads (checked
   by URL and by the requesting client), so it's never stale.
 - Local testing: serve the repo on localhost and open

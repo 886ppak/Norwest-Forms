@@ -112,8 +112,10 @@
 <main>
   <div id="gate" class="card gate">
     <h1>Admin dashboard</h1>
-    <p>Private usage stats for Norwest Forms.<br>Owner only — sign in with Google.</p>
+    <p>Private usage stats for Norwest Forms.<br>Owner only — sign in with Google or a passkey.</p>
     <button id="signInBtn" class="btn" type="button">Sign in with Google</button>
+    <button id="passkeyBtn" class="btn sec" type="button" style="margin-top:10px">Sign in with passkey</button>
+    <div id="gateStatus" style="margin-top:10px; font-size:13px; color:var(--muted)"></div>
     <div id="gateErr" class="err"></div>
   </div>
 
@@ -178,7 +180,7 @@
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut, connectAuthEmulator, signInWithCredential }
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut, connectAuthEmulator, signInWithCredential, signInWithEmailLink }
   from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
 import { getFirestore, collection, query, where, orderBy, onSnapshot, Timestamp, connectFirestoreEmulator }
   from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
@@ -255,6 +257,66 @@ $('signInBtn').onclick = async () => {
   }
 };
 getRedirectResult(auth).catch(e => { $('gateErr').textContent = 'Sign-in failed: ' + (e.code || e.message); });
+
+// Passkey sign-in through the homelab's Authentik (app norwest-admin: a
+// PUBLIC OIDC client - PKCE, no secret - that goes straight to the passkey
+// prompt and only lets the owner's accounts in). Authentik sends us back
+// here with ?code=&state=; the adminPasskeySignIn function swaps the code
+// for the account's email and returns a one-time Firebase email sign-in
+// link, completed here with signInWithEmailLink (nothing is emailed). Same
+// approach as the myslewer app's passkey button - no paid Firebase add-on.
+// The PKCE verifier/state sit in localStorage so the return trip finds them.
+const PASSKEY_AUTHORIZE_URL = 'https://login.15buzza.au/application/o/authorize/';
+const PASSKEY_CLIENT_ID = 'fPLJ239vZGyR5IlHTCH7uFwOIp5msCE8AwsVtSyB';
+const PAGE_URL = useEmu ? location.origin + location.pathname + '?emulator' : 'https://886ppak.github.io/Norwest-Forms/admin.html';
+const PASSKEY_FN = useEmu
+  ? 'http://127.0.0.1:5001/demo-norwest/australia-southeast1/adminPasskeySignIn'
+  : 'https://australia-southeast1-norwest-forms.cloudfunctions.net/adminPasskeySignIn';
+const PKCE_KEY = 'norwestAdminPkce';
+const b64url = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+$('passkeyBtn').onclick = async () => {
+  $('gateErr').textContent = '';
+  try {
+    const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
+    const state = b64url(crypto.getRandomValues(new Uint8Array(16)));
+    const challenge = b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
+    localStorage.setItem(PKCE_KEY, JSON.stringify({ verifier, state }));
+    location.href = PASSKEY_AUTHORIZE_URL + '?' + new URLSearchParams({
+      response_type: 'code', client_id: PASSKEY_CLIENT_ID, redirect_uri: PAGE_URL,
+      scope: 'openid email profile', state, code_challenge: challenge, code_challenge_method: 'S256',
+    });
+  } catch (e) {
+    $('gateErr').textContent = 'Passkeys aren’t available in this browser.';
+  }
+};
+
+async function completePasskeySignIn(params) {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(PKCE_KEY) || '{}'); } catch (e) {}
+  localStorage.removeItem(PKCE_KEY);
+  // Drop the one-time code from the address bar so a refresh can't replay it.
+  history.replaceState({}, document.title, location.pathname + (useEmu ? '?emulator' : ''));
+  const code = params.get('code');
+  if (!code || !saved.verifier || saved.state !== params.get('state')) {
+    $('gateErr').textContent = 'Passkey sign-in didn’t finish - try again.';
+    return;
+  }
+  $('gateStatus').textContent = 'Signing you in…';
+  try {
+    const r = await fetch(PASSKEY_FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, codeVerifier: saved.verifier }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.link) throw new Error(j.error || 'Passkey sign-in didn’t work - try again.');
+    await signInWithEmailLink(auth, j.email, j.link);
+  } catch (e) {
+    $('gateErr').textContent = e.message || 'Passkey sign-in didn’t work - try again.';
+  }
+  $('gateStatus').textContent = '';
+}
+{
+  const params = new URLSearchParams(location.search);
+  if (params.has('state') && (params.has('code') || params.has('error'))) completePasskeySignIn(params);
+}
 const doSignOut = () => signOut(auth);
 $('signOutBtn').onclick = doSignOut;
 $('deniedSignOut').onclick = doSignOut;

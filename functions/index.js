@@ -329,3 +329,75 @@ exports.exportUsageToNextcloud = onSchedule(
   { schedule: '0 11 * * 0', timeZone: 'Australia/Perth', region: REGION, secrets: [NEXTCLOUD_APP_PASSWORD], timeoutSeconds: 120 },
   async () => { await exportUsage(); }
 );
+
+// ---- Admin dashboard: "Sign in with passkey" --------------------------
+// Same approach as the myslewer app's passkeySignIn, so no paid Firebase
+// add-on (custom OIDC providers would need the Identity Platform upgrade):
+// admin.html sends the owner to the homelab's Authentik (app
+// norwest-admin - a PUBLIC OIDC client, PKCE, no client secret anywhere,
+// straight to the passkey prompt, and only the owner's two Authentik
+// accounts are allowed in). Authentik sends them back to admin.html with
+// ?code=, which posts code + code_verifier here. We swap those for the
+// account's email, check it's an admin email, and hand back a one-time
+// Firebase email sign-in link that admin.html completes on the spot with
+// signInWithEmailLink - nothing is actually emailed. firestore.rules
+// (isAdmin) stays the real gate: the link only proves the email.
+const { onRequest } = require('firebase-functions/v2/https');
+const { getAuth } = require('firebase-admin/auth');
+// Overridable only so the emulator tests can point at a stand-in.
+const AUTHENTIK_URL = defineString('AUTHENTIK_URL', { default: 'https://login.15buzza.au' });
+const ADMIN_PAGE_URL = defineString('ADMIN_PAGE_URL', { default: 'https://886ppak.github.io/Norwest-Forms/admin.html' });
+const AUTHENTIK_ADMIN_CLIENT_ID = 'fPLJ239vZGyR5IlHTCH7uFwOIp5msCE8AwsVtSyB';
+// Keep in step with isAdmin() in firestore.rules.
+const ADMIN_EMAILS = ['myslewer@gmail.com', '15buzza@gmail.com'];
+
+exports.adminPasskeySignIn = onRequest(
+  { region: REGION, invoker: 'public' },
+  async (req, res) => {
+    const origin = new URL(ADMIN_PAGE_URL.value()).origin;
+    res.set('Access-Control-Allow-Origin', origin);
+    res.set('Vary', 'Origin');
+    if (req.method === 'OPTIONS') {
+      res.set('Access-Control-Allow-Methods', 'POST');
+      res.set('Access-Control-Allow-Headers', 'Content-Type');
+      res.set('Access-Control-Max-Age', '3600');
+      res.status(204).send('');
+      return;
+    }
+    if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
+    const { code, codeVerifier } = req.body || {};
+    if (typeof code !== 'string' || typeof codeVerifier !== 'string' || code.length > 512 || codeVerifier.length > 256) {
+      res.status(400).json({ error: 'Bad request' });
+      return;
+    }
+    let email;
+    try {
+      const tr = await fetch(`${AUTHENTIK_URL.value()}/application/o/token/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ grant_type: 'authorization_code', code, code_verifier: codeVerifier,
+          redirect_uri: ADMIN_PAGE_URL.value(), client_id: AUTHENTIK_ADMIN_CLIENT_ID }),
+      });
+      const tj = await tr.json().catch(() => ({}));
+      if (!tr.ok || !tj.access_token) {
+        res.status(401).json({ error: 'That sign-in didn’t go through - try again.' });
+        return;
+      }
+      const ur = await fetch(`${AUTHENTIK_URL.value()}/application/o/userinfo/`, { headers: { Authorization: `Bearer ${tj.access_token}` } });
+      const info = await ur.json();
+      email = String(info.email || '').trim().toLowerCase();
+    } catch (e) {
+      console.error('adminPasskeySignIn: Authentik exchange failed', e);
+      res.status(502).json({ error: 'Could not reach the sign-in server - try again shortly.' });
+      return;
+    }
+    if (!ADMIN_EMAILS.includes(email)) {
+      console.warn(`adminPasskeySignIn refused for ${email || '(no email)'}`);
+      res.status(403).json({ error: 'That account can’t see the dashboard.' });
+      return;
+    }
+    const link = await getAuth().generateSignInWithEmailLink(email, { url: ADMIN_PAGE_URL.value(), handleCodeInApp: true });
+    console.log(`Admin passkey sign-in for ${email}`);
+    res.json({ email, link });
+  }
+);
