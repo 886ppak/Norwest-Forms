@@ -266,7 +266,9 @@ getRedirectResult(auth).catch(e => { $('gateErr').textContent = 'Sign-in failed:
 // link, completed here with signInWithEmailLink (nothing is emailed). Same
 // approach as the myslewer app's passkey button - no paid Firebase add-on.
 // The PKCE verifier/state sit in localStorage so the return trip finds them.
-const PASSKEY_AUTHORIZE_URL = 'https://login.15buzza.au/application/o/authorize/';
+// net.15buzza.au (the homelab login), NOT login.15buzza.au (myslewer's): a passkey
+// only works on the site it was made on, and the owner's passkeys were made on net.
+const PASSKEY_AUTHORIZE_URL = 'https://net.15buzza.au/application/o/authorize/';
 const PASSKEY_CLIENT_ID = 'fPLJ239vZGyR5IlHTCH7uFwOIp5msCE8AwsVtSyB';
 const PAGE_URL = useEmu ? location.origin + location.pathname + '?emulator' : 'https://886ppak.github.io/Norwest-Forms/admin.html';
 const PASSKEY_FN = useEmu

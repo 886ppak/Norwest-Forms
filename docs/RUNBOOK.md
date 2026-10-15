@@ -238,8 +238,8 @@ folder + Discord channel. Full setup, statuses and troubleshooting:
 **Where:** https://886ppak.github.io/Norwest-Forms/admin.html (bookmark it),
 or in the app tap the version number top-left **5 times quickly**.
 Sign in with Google as `myslewer@gmail.com`, or tap **Sign in with
-passkey** (the homelab's Authentik at login.15buzza.au, accounts 15buzza or
-myslewer@gmail.com - whichever has a passkey saved). Everything on it is live
+passkey** (the homelab's Authentik at net.15buzza.au, accounts 15buzza or
+myslewer@gmail.com - whichever has a passkey saved there). Everything on it is live
 (straight from Firestore): this pay week, week by week, per person, who's
 not in yet, forms, help reports (failed/partial highlighted, Nextcloud
 links) and health (this month's job numbers, latest report). Firestore
@@ -260,8 +260,9 @@ to admin.html with a one-time code; the `adminPasskeySignIn` function
 `ADMIN_EMAILS`, and returns a one-time Firebase email sign-in link that the
 page completes straight away (nothing is emailed). Needs Firebase
 Authentication → Sign-in method → **Email/Password → Email link** enabled.
-To add a passkey: log in at login.15buzza.au → Settings → MFA Devices →
-WebAuthn → Add.
+To add a passkey: log in at net.15buzza.au → Settings → MFA Devices →
+WebAuthn → Add. (Passkeys only work on the site they were made on - one made
+on login.15buzza.au, myslewer's login, won't be offered here.)
 
 **Add or remove an admin:** edit the email list in `isAdmin()` in
 `firestore.rules` AND `ADMIN_EMAILS` in `functions/index.js` (passkey

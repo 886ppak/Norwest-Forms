@@ -556,7 +556,9 @@ no-login creates are unchanged. Workers never sign in.
   --project norwest-forms`. Nothing in admin.html needs changing.
 - **Passkey sign-in (Oct 2026):** copied from the myslewer app so it costs
   nothing (custom OIDC providers in Firebase would need the paid Identity
-  Platform upgrade). Authentik app `norwest-admin` on login.15buzza.au is a
+  Platform upgrade). Authentik app `norwest-admin` on net.15buzza.au (the homelab login - moved
+  from login.15buzza.au on 15 Oct: passkeys are tied to the site they were made
+  on, and the owner's were made on net.15buzza.au) is a
   public OIDC client (PKCE, no secret; client id in admin.html and
   functions) whose login flow is passkey-only, and only the owner's two
   Authentik users are bound to it. admin.html → Authentik → back with

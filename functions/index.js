@@ -345,7 +345,7 @@ exports.exportUsageToNextcloud = onSchedule(
 const { onRequest } = require('firebase-functions/v2/https');
 const { getAuth } = require('firebase-admin/auth');
 // Overridable only so the emulator tests can point at a stand-in.
-const AUTHENTIK_URL = defineString('AUTHENTIK_URL', { default: 'https://login.15buzza.au' });
+const AUTHENTIK_URL = defineString('AUTHENTIK_URL', { default: 'https://net.15buzza.au' });
 const ADMIN_PAGE_URL = defineString('ADMIN_PAGE_URL', { default: 'https://886ppak.github.io/Norwest-Forms/admin.html' });
 const AUTHENTIK_ADMIN_CLIENT_ID = 'fPLJ239vZGyR5IlHTCH7uFwOIp5msCE8AwsVtSyB';
 // Keep in step with isAdmin() in firestore.rules.
