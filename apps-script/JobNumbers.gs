@@ -15,6 +15,10 @@
 const SHEET_NAME = 'JobNumbers';
 const HEADERS = ['Month', 'Port Hedland', 'Newman', 'Flights', 'Logistics', 'Medicals'];
 const GMAIL_LABEL = 'Process-JobNumbers';
+// Discord webhook — notify the owner when job numbers are added OR refused by the
+// sense-check. Paste your webhook URL here (Discord: Server Settings > Integrations
+// > Webhooks > New Webhook > Copy Webhook URL).
+const DISCORD_WEBHOOK_URL = 'PASTE_DISCORD_WEBHOOK_URL_HERE';
 
 // Serves the sheet as JSON to the app. Live endpoint - the app depends on it.
 function doGet() {
@@ -44,18 +48,26 @@ function doGet() {
 function processJobNumberEmails() {
   const label = GmailApp.getUserLabelByName(GMAIL_LABEL);
   if (!label) return;
+  const added = [];   // summary lines for the Discord notification
   const threads = label.getThreads();
   threads.forEach(thread => {
     thread.getMessages().forEach(msg => {
       const text = msg.getPlainBody();
       const nums = parseJobNumbers_(text);
       if (Object.values(nums).some(Boolean)) {
-        upsertMonth_(monthKeyFromEmail_(text, msg.getDate()), nums);
+        const month = monthKeyFromEmail_(text, msg.getDate());
+        upsertMonth_(month, nums);
+        const parts = HEADERS.slice(1).filter(function(h){ return nums[h]; })
+          .map(function(h){ return h + ' ' + nums[h]; });
+        added.push(month + ': ' + parts.join(', '));
       }
     });
     thread.removeLabel(label);
   });
   reportSuspicious_();
+  if (added.length) {
+    notifyDiscord_(':white_check_mark: Norwest job numbers added:\n' + added.map(function(x){ return '  ' + x; }).join('\n'));
+  }
   checkCurrentMonth_();
 }
 
@@ -225,6 +237,22 @@ function upsertMonth_(monthKey, nums) {
   });
 }
 
+// Posts a message to the Discord channel, if a webhook URL is configured.
+// Silent no-op otherwise, so the script still works without Discord.
+function notifyDiscord_(content) {
+  if (!DISCORD_WEBHOOK_URL || DISCORD_WEBHOOK_URL.indexOf('PASTE_') === 0) return;
+  try {
+    UrlFetchApp.fetch(DISCORD_WEBHOOK_URL, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({ content: content }),
+      muteHttpExceptions: true
+    });
+  } catch (e) {
+    Logger.log('Discord notify failed: ' + e);
+  }
+}
+
 // Logs and emails anything the sense check refused to write.
 function reportSuspicious_() {
   if (!suspicious_.length) return;
@@ -235,6 +263,7 @@ function reportSuspicious_() {
     'These job numbers looked wrong compared with recent months, so they were NOT written to the sheet:\n\n  ' +
     list.join('\n  ') + '\n\nCheck the email (run traceValue with that number to find it) and type the right ' +
     'number into the sheet by hand if needed: ' + SpreadsheetApp.getActiveSpreadsheet().getUrl());
+  notifyDiscord_(':warning: Norwest job numbers REFUSED by sense-check:\n' + list.map(function(x){ return '  ' + x; }).join('\n'));
 }
 
 function getSheet_() {
