@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norwest-timesheet-v83';
+const CACHE_NAME = 'norwest-timesheet-v110';
 const APP_SHELL = [
   './',
   './index.html',
@@ -53,6 +53,11 @@ self.addEventListener('fetch', event => {
 });
 
 function appResponse(event) {
+  // A share into the app arrives as ./index.html?title=...&text=... Those URLs
+  // carry the shared email text, so they are never cached: serve the app shell.
+  if (event.request.mode === 'navigate' && new URL(event.request.url).search) {
+    return caches.match('./index.html').then(cached => cached || fetch(event.request));
+  }
   return (
     caches.match(event.request).then(cached => {
       if (cached) return cached;
