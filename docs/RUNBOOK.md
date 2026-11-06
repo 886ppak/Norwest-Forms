@@ -250,10 +250,10 @@ the installed PWA rather than a browser tab.
 Reading it: the **Usage** and **Calendar email import** cards at the top of
 the admin dashboard (8c). Both are live and bucketed by **Perth** calendar day.
 
-**TTL for the new collection — one-off, still to do** (the 13 Oct policy only
-covers `submissions`). Until it is set, records stay in the database even
-though they carry `expireAt` (the dashboard ignores anything older than its
-70-day window either way):
+**TTL for the new collection — one-off, STILL TO DO as of 6 Nov 2026** (the
+13 Oct policy only covers `submissions`; this collection needs its own). Until
+it is set, records stay in the database even though they carry `expireAt` (the
+dashboard ignores anything older than its 70-day window either way):
 ```
 gcloud firestore fields ttls update expireAt --collection-group=usageEvents --enable-ttl --project=norwest-forms
 ```
