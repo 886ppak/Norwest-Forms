@@ -85,6 +85,34 @@ service cloud.firestore {
       }
     }
 
+    // Usage events: how often the app is opened, and how often the
+    // mobilisation-email import actually puts a job on someone's calendar
+    // (index.html logAppOpen / logCalImport). Same no-login, create-only,
+    // tightly shaped approach as `submissions`, and deliberately NOT
+    // identifying: no name, no company beyond NCH/NWP, no IP. The device id
+    // is a random value the phone makes for itself, never tied to a person,
+    // and every record is gone after ~60 days (expireAt + TTL - the TTL
+    // policy needs adding for this collection too, see RUNBOOK 8d).
+    match /usageEvents/{eventId} {
+      allow create: if request.resource.data.keys().hasOnly(['kind', 'at', 'expireAt', 'device', 'appVersion', 'inst', 'via', 'jobs', 'company'])
+                     && request.resource.data.kind is string
+                     && request.resource.data.kind in ['open', 'calimport']
+                     && request.resource.data.at is timestamp
+                     && request.resource.data.expireAt is timestamp
+                     && request.resource.data.expireAt > request.resource.data.at
+                     && request.resource.data.device is string
+                     && request.resource.data.device.size() <= 32
+                     && request.resource.data.appVersion is string
+                     && request.resource.data.appVersion.size() <= 12
+                     && request.resource.data.inst is bool
+                     // calendar-import records may carry how it arrived and how many jobs
+                     && (!('via' in request.resource.data) || request.resource.data.via in ['share', 'paste'])
+                     && (!('jobs' in request.resource.data) || (request.resource.data.jobs is int && request.resource.data.jobs >= 0 && request.resource.data.jobs <= 50))
+                     && (!('company' in request.resource.data) || (request.resource.data.company is string && request.resource.data.company.size() <= 10));
+      allow get, list: if isAdmin();
+      allow update, delete: if false;
+    }
+
     // Deny everything else outright - an explicit fallback rather than
     // relying on Firestore's own "no matching rule = denied" default, so
     // adding some unrelated collection later can't accidentally inherit

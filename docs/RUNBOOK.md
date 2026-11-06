@@ -18,7 +18,8 @@ the week ending **Sunday** and are due by **Monday 10am**.
 | Job Numbers API | Apps Script project **"Job Numbers API"**, inside that sheet (Extensions → Apps Script). Source: `apps-script/JobNumbers.gs` | Serves the sheet to the app, reads the monthly email, emails you if a month is missing |
 | Gmail filter + label | Same Google account. Label `Process-JobNumbers` | Marks the monthly email so the script picks it up |
 | Usage log | Firebase project `norwest-forms`, Firestore collection `submissions` | One record per real "Submit & Send" (ongoing; ~60 days kept, weekly archive to Nextcloud) |
-| Admin dashboard | `admin.html` in this repo (owner only, Google or passkey sign-in) | Live usage stats + help reports. See section 8c |
+| Usage events | Same project, collection `usageEvents` (since v1.45) | App opens + calendar email imports, anonymous (random per-phone id only). See section 8a |
+| Admin dashboard | `admin.html` in this repo (owner only, Google or passkey sign-in) | Live usage + calendar-import stats, help reports. See section 8c |
 
 The app reads job numbers from the URL in `JOB_NUMBERS_URL` in `index.html`.
 Current deployment (Oct 2026):
@@ -224,6 +225,47 @@ Notes:
 
 ---
 
+## 8a. Usage events (app opens + calendar email imports) — added v1.45
+
+A second, separate collection `usageEvents` answers two questions the
+submissions log can't: **is the app being opened**, and **is the
+mobilisation-email import actually being used**.
+
+- `kind: 'open'` — one per app launch (`logAppOpen`), written once at startup.
+  A service-worker reload fires the load event twice, so a second open within
+  60 s is ignored, otherwise the count would overstate usage.
+- `kind: 'calimport'` — written only when a mobilisation email actually lands
+  on the calendar (`calAddJobs` for a clean read, `calSaveAll` after the check
+  screen). Re-reading a bad paste does **not** count. Carries `via`
+  (`share` = sent from Gmail, `paste` = typed in), `jobs` (how many jobs that
+  import added) and `company` (NCH/NWP).
+
+Deliberately **not** identifying: no name, no IP, no form contents. The only
+per-phone value is `device`, a random 16-hex id the phone makes for itself on
+first use (`usageDeviceId`, localStorage `norwestDeviceId`) — never linked to a
+person, so the dashboard can say "9 phones" but not who. Records carry
+`expireAt` (60 days) exactly like `submissions`. `inst` = the app running as
+the installed PWA rather than a browser tab.
+
+Reading it: the **Usage** and **Calendar email import** cards at the top of
+the admin dashboard (8c). Both are live and bucketed by **Perth** calendar day.
+
+**TTL for the new collection — one-off, still to do** (the 13 Oct policy only
+covers `submissions`). Until it is set, records stay in the database even
+though they carry `expireAt` (the dashboard ignores anything older than its
+70-day window either way):
+```
+gcloud firestore fields ttls update expireAt --collection-group=usageEvents --enable-ttl --project=norwest-forms
+```
+Check it took: `gcloud firestore fields ttls list --project norwest-forms`
+should show `usageEvents` as ACTIVE next to `submissions`.
+
+To stop counting opens, remove the `logAppOpen()` call at the bottom of
+`index.html`; to stop counting imports, remove the two `logCalImport(...)`
+calls. The disclosure on the company picker must stay while either runs.
+
+---
+
 ## 8b. Help tab reports
 
 Workers can send a problem report (with screenshots) from the **?** icon
@@ -240,7 +282,9 @@ or in the app tap the version number top-left **5 times quickly**.
 Sign in with Google as `myslewer@gmail.com`, or tap **Sign in with
 passkey** (the homelab's Authentik at net.15buzza.au, accounts 15buzza or
 myslewer@gmail.com - whichever has a passkey saved there). Everything on it is live
-(straight from Firestore): this pay week, week by week, per person, who's
+(straight from Firestore): usage (opens today/this week, 14-day strip,
+installed vs browser), calendar email imports (today/week/all, shared-in vs
+pasted, jobs added), this pay week, week by week, per person, who's
 not in yet, forms, help reports (failed/partial highlighted, Nextcloud
 links) and health (this month's job numbers, latest report). Firestore
 only holds ~60 days; older history is in Nextcloud › PWA › Norwest-forms ›

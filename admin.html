@@ -87,6 +87,15 @@
   .st.failed, .st.partial{ background:#fbe1dd; color:var(--bad); }
   .st.throttled{ background:#fff1cc; color:#8a6100; }
   .rep.bad{ background:#fff5f3; margin:0 -14px; padding:10px 14px; }
+  .bars{ display:flex; align-items:flex-end; gap:3px; height:58px; margin-top:12px; }
+  .bars .b{ flex:1; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; gap:3px; min-width:0; }
+  .bars .b i{ display:block; width:100%; background:var(--accent); border-radius:3px 3px 0 0; min-height:2px; }
+  .bars .b.today i{ background:var(--accent-dark); }
+  .bars .b u{ font-size:9px; color:var(--muted); text-decoration:none; font-weight:700; }
+  .bars .b em{ font-size:9.5px; color:var(--muted); font-style:normal; font-weight:800; }
+  .chart2{ display:flex; align-items:flex-end; gap:2px; height:52px; margin-top:10px; }
+  .chart2 .b{ flex:1; display:flex; flex-direction:column; justify-content:flex-end; min-width:0; }
+  .chart2 .b i{ display:block; width:100%; background:#4a5263; border-radius:2px 2px 0 0; min-height:1px; }
   a{ color:var(--accent-dark); }
   .health li span:last-child{ font-weight:700; text-align:right; }
   .ok-t{ color:var(--good); } .bad-t{ color:var(--bad); }
@@ -126,6 +135,30 @@
   </div>
 
   <div id="dash" class="hidden">
+    <div class="card">
+      <h2>Usage <span class="sub" id="usageSub"></span></h2>
+      <div class="tiles">
+        <div class="tile"><b id="uToday">–</b><span>opens today</span></div>
+        <div class="tile"><b id="uWeek">–</b><span>opens this week</span></div>
+        <div class="tile"><b id="uPhones">–</b><span>phones</span></div>
+      </div>
+      <div class="bars" id="usageBars"></div>
+      <div class="legend" id="usageLegend"></div>
+      <div class="split" id="usageSplit"></div>
+    </div>
+
+    <div class="card">
+      <h2>Calendar email import</h2>
+      <div class="tiles">
+        <div class="tile"><b id="cToday">–</b><span>today</span></div>
+        <div class="tile"><b id="cWeek">–</b><span>this week</span></div>
+        <div class="tile"><b id="cTotal">–</b><span>all (~60 d)</span></div>
+      </div>
+      <div class="chart2" id="calBars"></div>
+      <div class="split" id="calSplit"></div>
+      <div class="legend">A count is saved only when a mobilisation email actually lands on the calendar — re-reading a bad paste doesn't count. "Shared in" = sent from Gmail, "pasted" = typed/pasted in the app. Days without a bar had no imports.</div>
+    </div>
+
     <div class="card">
       <h2>This pay week <span class="sub" id="weekLabel"></span></h2>
       <div class="tiles">
@@ -234,7 +267,7 @@ const addDaysISO = (iso, n) => { const [y, m, d] = iso.split('-').map(Number); r
 const nameKey = n => (n || '').trim().replace(/\s+/g, ' ').toLowerCase();
 
 // ---- state
-let subs = [], reports = [], subsLive = false, repsLive = false, gotData = false;
+let subs = [], reports = [], usage = [], subsLive = false, repsLive = false, usageLive = false, gotData = false;
 let jobHealth = { state: 'loading' };
 let unsubs = [];
 
@@ -325,7 +358,7 @@ $('deniedSignOut').onclick = doSignOut;
 
 onAuthStateChanged(auth, user => {
   unsubs.forEach(u => u()); unsubs = [];
-  subs = []; reports = []; subsLive = repsLive = gotData = false;
+  subs = []; reports = []; usage = []; subsLive = repsLive = usageLive = gotData = false;
   show('signOutBtn', !!user);
   show('live', false);
   if (!user) { show('gate', true); show('denied', false); show('dash', false); return; }
@@ -362,6 +395,13 @@ function start(user) {
       repsLive = !snap.metadata.fromCache; gotData = true;
       render();
     }, onErr));
+  unsubs.push(onSnapshot(query(collection(db, 'usageEvents'), where('at', '>=', since), orderBy('at', 'desc')),
+    { includeMetadataChanges: true },
+    snap => {
+      usage = snap.docs.map(d => ({ id: d.id, ...d.data() })).map(r => ({ ...r, when: r.at.toDate() }));
+      usageLive = !snap.metadata.fromCache; gotData = true;
+      render();
+    }, onErr));
   loadJobNumbers();
 }
 
@@ -384,8 +424,8 @@ async function loadJobNumbers() {
 function render() {
   if (!gotData) return;               // nothing until Firestore has answered (and allowed) a read
   show('dash', true);
-  $('live').classList.toggle('on', subsLive && repsLive);
-  $('live').textContent = subsLive && repsLive ? 'live' : 'connecting…';
+  $('live').classList.toggle('on', subsLive && repsLive && usageLive);
+  $('live').textContent = subsLive && repsLive && usageLive ? 'live' : 'connecting…';
   show('live', true);
 
   const now = new Date();
@@ -417,6 +457,64 @@ function render() {
     s[n] = (s[n] || 0) + 1; company[k] = r.company;
   }
   const display = k => Object.entries(spell[k]).sort((a, b) => b[1] - a[1])[0][0];
+
+  // ---- usage: app opens + calendar email imports
+  // Bucketed by Perth calendar day, so "today" is the owner's today, not UTC's.
+  const dayOf = d => perth(d).toISOString().slice(0, 10);
+  const todayISO = dayOf(now);
+  const dayList = n => Array.from({ length: n }, (_, i) => addDaysISO(todayISO, -(n - 1 - i)));  // oldest first
+  const opens = usage.filter(r => r.kind === 'open');
+  const imports = usage.filter(r => r.kind === 'calimport');
+  const onDay = (list, day) => list.filter(r => dayOf(r.when) === day);
+  const weekAgo = addDaysISO(todayISO, -7);
+
+  const days14 = dayList(14);
+  const opensByDay = Object.fromEntries(days14.map(d => [d, onDay(opens, d).length]));
+  const impByDay = Object.fromEntries(days14.map(d => [d, onDay(imports, d).length]));
+
+  const lastOpen = opens[0];
+  $('usageSub').textContent = lastOpen ? 'last opened ' + fmtPerth(lastOpen.when) : 'no opens logged yet';
+  $('uToday').textContent = opensByDay[todayISO] || 0;
+  $('uWeek').textContent = opens.filter(r => dayOf(r.when) > weekAgo).length;
+  $('uPhones').textContent = new Set(opens.filter(r => dayOf(r.when) > weekAgo && r.device).map(r => r.device)).size;
+
+  const maxOpen = Math.max(1, ...Object.values(opensByDay));
+  $('usageBars').innerHTML = days14.map(d => {
+    const n = opensByDay[d];
+    const h = n ? Math.max(4, Math.round(46 * n / maxOpen)) : 2;
+    return `<div class="b${d === todayISO ? ' today' : ''}"><em>${n || ''}</em>`
+      + `<i style="height:${h}px"></i><u>${DOW[new Date(d + 'T00:00:00Z').getUTCDay()][0]}</u></div>`;
+  }).join('');
+  const busiest = days14.reduce((a, d) => (opensByDay[d] > (opensByDay[a] || 0) ? d : a), days14[0]);
+  $('usageLegend').textContent = opens.length
+    ? `Opens per day, last 14 days — oldest on the left, ${fmtWeek(todayISO)} (today) on the right. `
+      + `Busiest day: ${fmtWeek(busiest)} with ${opensByDay[busiest]}. `
+      + `Phones = distinct devices that opened the app this week; that id is random and made on the phone, never a person.`
+    : 'No opens logged yet. Counting starts with this version — each phone needs to open the app once on it.';
+  const installed = opens.filter(r => r.inst).length;
+  const allPhones = new Set(opens.map(r => r.device).filter(Boolean)).size;
+  $('usageSplit').innerHTML = opens.length
+    ? `<span class="pill ok">${installed} installed app</span><span class="pill">${opens.length - installed} in browser</span>`
+      + `<span class="pill">${allPhones} phone${allPhones === 1 ? '' : 's'} (~60 d)</span>`
+    : '';
+
+  const viaShare = imports.filter(r => r.via === 'share').length;
+  const viaPaste = imports.filter(r => r.via === 'paste').length;
+  const jobsAdded = imports.reduce((a, r) => a + (Number(r.jobs) || 0), 0);
+  $('cToday').textContent = impByDay[todayISO] || 0;
+  $('cWeek').textContent = imports.filter(r => dayOf(r.when) > weekAgo).length;
+  $('cTotal').textContent = imports.length;
+  const maxImp = Math.max(1, ...Object.values(impByDay));
+  $('calBars').innerHTML = days14.map(d => {
+    const n = impByDay[d];
+    const h = n ? Math.max(3, Math.round(42 * n / maxImp)) : 1;
+    return `<div class="b" title="${fmtWeek(d)}: ${n}"><i style="height:${h}px"></i></div>`;
+  }).join('');
+  const impPhones = new Set(imports.map(r => r.device).filter(Boolean)).size;
+  $('calSplit').innerHTML = imports.length
+    ? `<span class="pill ok">${viaShare} shared in</span><span class="pill">${viaPaste} pasted</span>`
+      + `<span class="pill">${jobsAdded} job${jobsAdded === 1 ? '' : 's'} added</span><span class="pill">${impPhones} phone${impPhones === 1 ? '' : 's'}</span>`
+    : '<span class="pill">No calendar imports logged yet</span>';
 
   // ---- this pay week
   const cw = weekStats(cur);
