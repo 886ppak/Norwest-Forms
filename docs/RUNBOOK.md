@@ -281,16 +281,22 @@ devices }] }` for up to 24 months. Monthly totals only — per-day and per-perso
 detail stays in the live window; the full `logs-*.csv` are in the Usage folder
 if ever needed.
 
-**TTL for the new collection — one-off, STILL TO DO as of 6 Nov 2026** (the
-13 Oct policy only covers `submissions`; this collection needs its own). Until
-it is set, records stay in the database even though they carry `expireAt` (the
-dashboard ignores anything older than its 90-day window either way):
+**TTL is on for both collections (7 Nov 2026).** `expireAt` is ACTIVE for
+`submissions` (since 13 Oct) and `usageEvents`. Check any time with:
 ```
-gcloud firestore fields ttls update expireAt --collection-group=usageEvents --enable-ttl --project=norwest-forms
+gcloud firestore fields ttls list --project norwest-forms
 ```
-Check it took: `gcloud firestore fields ttls list --project norwest-forms`
-should show `usageEvents` as ACTIVE next to `submissions`. Do NOT let a month
-expire before the archiver has run at least once for it.
+The one-off command that enabled the second one, in case the collection is
+ever recreated (run it with `--quiet`; without it gcloud waits on an
+interactive "Do you want to continue?" prompt and appears to hang):
+```
+gcloud firestore fields ttls update expireAt --collection-group=usageEvents --enable-ttl --project=norwest-forms --quiet
+```
+**Order matters:** the archiver must have run for a month before that month's
+records expire, so don't enable TTL on a new collection until `archiveUsageDaily`
+has covered the months in it. Deleting a month's Firestore records is harmless
+once its `totals-*.csv` exists, because the totals are then never rewritten
+(see above).
 
 To stop counting opens, remove the `logAppOpen()` call at the bottom of
 `index.html`; to stop counting imports, remove the two `logCalImport(...)`
