@@ -27,7 +27,7 @@ service cloud.firestore {
     }
 
     match /submissions/{eventId} {
-      allow create: if request.resource.data.keys().hasOnly(['formType', 'name', 'company', 'ip', 'submittedAt', 'expireAt'])
+      allow create: if request.resource.data.keys().hasOnly(['formType', 'name', 'company', 'ip', 'inst', 'submittedAt', 'expireAt'])
                      && request.resource.data.formType is string
                      && request.resource.data.formType in ['timesheet', 'leave', 'training', 'medical']
                      && request.resource.data.name is string
@@ -36,6 +36,9 @@ service cloud.firestore {
                      && request.resource.data.company.size() <= 10
                      && request.resource.data.ip is string
                      && request.resource.data.ip.size() <= 45
+                     // v1.47: installed PWA (true) vs browser (false) at send
+                     // time - optional so pre-v1.47 clients still pass.
+                     && (!('inst' in request.resource.data) || request.resource.data.inst is bool)
                      && request.resource.data.submittedAt is timestamp
                      // Kept 90 days in Firestore, then TTL deletes it. Every
                      // month is archived to Nextcloud before that (functions

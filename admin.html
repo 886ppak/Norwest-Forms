@@ -190,7 +190,7 @@
     <div class="card">
       <h2>Per person <span class="sub">(timesheets, last 8 weeks)</span></h2>
       <div class="scroll"><table class="grid" id="personGrid"></table></div>
-      <div class="legend"><span class="mk ok">✓</span> on time &nbsp; <span class="mk late">L</span> late &nbsp; <span class="mk oth">lv</span>/<span class="mk oth">tr</span> leave / training only. Names merged ignoring case; a resend counts once.</div>
+      <div class="legend"><span class="mk ok">✓</span> on time &nbsp; <span class="mk late">L</span> late &nbsp; <span class="mk oth">lv</span>/<span class="mk oth">tr</span> leave / training only. &nbsp;<span class="mk ok">▣</span> installed app / <span class="muted">▢</span> browser (since v1.47, latest form; no mark = sent before then). Names merged ignoring case; a resend counts once.</div>
     </div>
 
     <div class="card">
@@ -488,11 +488,12 @@ function render() {
   };
 
   // display name per person: the spelling they used most (latest wins ties)
-  const spell = {}, company = {};
+  const spell = {}, company = {}, instBy = {};
   for (const r of subs) {
     const k = nameKey(r.name); if (!k) continue;
     const s = (spell[k] ||= {}); const n = r.name.trim().replace(/\s+/g, ' ');
     s[n] = (s[n] || 0) + 1; company[k] = r.company;
+    if (typeof r.inst === 'boolean') instBy[k] = r.inst; // subs are oldest->newest, so latest wins
   }
   const display = k => Object.entries(spell[k]).sort((a, b) => b[1] - a[1])[0][0];
 
@@ -617,7 +618,7 @@ function render() {
   const gridWeeks = weeks;
   const keys = Object.keys(spell).sort((a, b) => display(a).localeCompare(display(b)));
   $('personGrid').innerHTML = '<tr><th>Name</th>' + gridWeeks.map(we => `<th>${fmtWeek(we).replace(' ', '<br>')}</th>`).join('') + '</tr>' +
-    (keys.length ? keys.map(k => '<tr><td>' + esc(display(k)) + `<span class="co">${esc(company[k] || '')}</span></td>` + gridWeeks.map(we => {
+    (keys.length ? keys.map(k => '<tr><td>' + esc(display(k)) + (k in instBy ? (instBy[k] ? ' <span class="mk ok" title="installed app">▣</span>' : ' <span class="muted" title="browser">▢</span>') : '') + `<span class="co">${esc(company[k] || '')}</span></td>` + gridWeeks.map(we => {
       const mine = (byWeek[we] || []).filter(r => r.key === k);
       const ts = mine.filter(r => r.formType === 'timesheet');
       if (ts.length) return ts.some(r => !r.late) ? '<td><span class="mk ok">✓</span></td>' : '<td><span class="mk late">L</span></td>';
