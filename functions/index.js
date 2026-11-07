@@ -642,7 +642,7 @@ exports.usageArchive = onRequest(
         const csv = await ncDownload(`${dir}/totals-${key}.csv`);
         if (!csv) continue;                       // month never archived (app unused)
         const t = parseTotalsCsv(csv);
-        months.push({
+        const m = {
           month: key,
           opens: t.app_opens || 0,
           imports: t.cal_imports || 0,
@@ -650,7 +650,11 @@ exports.usageArchive = onRequest(
           submissions: t.submissions_total || 0,
           people: t.submission_people || 0,
           devices: t.app_devices || 0,
-        });
+        };
+        // The archiver writes a file for every month it looks back over, so
+        // months before the app was used exist but are all zeros. Skip those
+        // rather than showing a row of noughts.
+        if (m.opens || m.imports || m.submissions) months.push(m);
       }
     } catch (e) {
       console.error('usageArchive: read failed', e);
