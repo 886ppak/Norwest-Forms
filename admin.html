@@ -557,20 +557,21 @@ function render() {
   // ---- older months (Nextcloud archive, read through usageArchive)
   const MON_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const monLabel = key => { const [y, m] = key.split('-').map(Number); return `${MON_FULL[m - 1]} ${y}`; };
-  // The current month and the one before are still fully (or partly) in the
-  // live window above; only show months that are actually finished.
-  const thisMonth = `${perth(now).getUTCFullYear()}-${String(perth(now).getUTCMonth() + 1).padStart(2, '0')}`;
-  const lastMonth = (() => { const p = perth(now); let y = p.getUTCFullYear(), m = p.getUTCMonth(); if (m < 1) { m = 12; y -= 1; } return `${y}-${String(m).padStart(2, '0')}`; })();
-  const oldMonths = archive.months.filter(m => m.month < lastMonth);
+  // Only months that have fallen entirely out of the live window above, so
+  // nothing is counted twice: a month joins this table once its last day is
+  // older than the WINDOW_DAYS cutoff.
+  const cutoffISO = addDaysISO(todayISO, -WINDOW_DAYS);
+  const monthEndISO = key => { const [y, m] = key.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); };
+  const oldMonths = archive.months.filter(m => monthEndISO(m.month) < cutoffISO);
   if (archive.state === 'ok' && oldMonths.length) {
     const tot = oldMonths.reduce((a, m) => ({ opens: a.opens + m.opens, imports: a.imports + m.imports, jobs: a.jobs + m.jobs, submissions: a.submissions + m.submissions }), { opens: 0, imports: 0, jobs: 0, submissions: 0 });
-    $('archSub').textContent = `(before ${monLabel(lastMonth)})`;
+    $('archSub').textContent = '(from the Nextcloud archive)';
     $('archTable').innerHTML = '<tr><th>Month</th><th>App opens</th><th>Calendar imports</th><th>Jobs added</th><th>Forms sent</th><th>People</th></tr>'
       + oldMonths.map(m => `<tr><td>${monLabel(m.month)}</td><td>${m.opens}</td><td>${m.imports}</td><td>${m.jobs}</td><td>${m.submissions}</td><td>${m.people}</td></tr>`).join('')
       + `<tr><td><b>Total</b></td><td><b>${tot.opens}</b></td><td><b>${tot.imports}</b></td><td><b>${tot.jobs}</b></td><td><b>${tot.submissions}</b></td><td></td></tr>`;
   } else if (archive.state === 'ok') {
     $('archSub').textContent = '';
-    $('archTable').innerHTML = '<tr><td class="muted small">Nothing archived yet — the archive starts once a month has finished, so this fills in from the start of next month.</td></tr>';
+    $('archTable').innerHTML = `<tr><td class="muted small">Nothing here yet — months move into this table once they are more than ${WINDOW_DAYS} days old (so the figures above never overlap).</td></tr>`;
   } else if (archive.state === 'error') {
     $('archSub').textContent = '';
     $('archTable').innerHTML = `<tr><td class="muted small">Couldn’t read the archive just now (${esc(archive.error || 'unknown error')}). The figures above are unaffected.</td></tr>`;
