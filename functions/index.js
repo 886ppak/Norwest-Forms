@@ -64,6 +64,11 @@ function ncDavUrl(davPath) {
   const encoded = davPath.split('/').map(encodeURIComponent).join('/');
   return `${NEXTCLOUD_DOMAIN.value()}/remote.php/dav/files/${encodeURIComponent(NEXTCLOUD_USERNAME.value())}${encoded}`;
 }
+// Does a file already exist? (HEAD on WebDAV: 200 yes, 404 no.)
+async function ncFileExists(davPath) {
+  const res = await fetch(ncDavUrl(davPath), { method: 'HEAD', headers: { Authorization: ncAuthHeader() } });
+  return res.status === 200;
+}
 // MKCOL on a folder that already exists returns 405 - that's fine.
 async function ncEnsureFolder(davPath) {
   const res = await fetch(ncDavUrl(davPath), { method: 'MKCOL', headers: { Authorization: ncAuthHeader() } });
@@ -460,29 +465,52 @@ async function archiveUsageDaily() {
     });
   });
 
+  // Write a detail log, but never let it shrink. Records start expiring 90
+  // days after they are written, so a month's file is at its fullest just
+  // before that; a later run would hand us a subset and quietly throw detail
+  // away. Keeping the longest version means the archive ends up with the
+  // complete month.
+  const writeDetail = async (name, header, lines) => {
+    const davPath = `${dir}/${name}`;
+    const existing = await ncDownload(davPath);
+    const existingRows = existing ? existing.trim().split(/\r?\n/).length - 1 : -1;
+    if (lines.length < existingRows) {
+      written.push(`${name} kept: ${existingRows} rows (had ${lines.length})`);
+      return;
+    }
+    const csv = [header.join(','), ...lines].join('\r\n') + '\r\n';
+    await ncUpload(davPath, Buffer.from(csv, 'utf8'), 'text/csv; charset=utf-8');
+    written.push(`${name}: ${lines.length}`);
+  };
+
   const written = [];
   for (const key of months) {
     if (subRows[key].length) {
       subRows[key].sort((a, b) => a.at - b.at);
       const header = ['perth_time', 'week_ending', 'late', 'form', 'company', 'name', 'ip'];
       const lines = subRows[key].map(r => [r.perthTime, r.weekEnding, r.late ? 'yes' : '', r.formType, r.company, r.name, r.ip].map(csvCell).join(','));
-      const csv = [header.join(','), ...lines].join('\r\n') + '\r\n';
-      await ncUpload(`${dir}/logs-submissions-${key}.csv`, Buffer.from(csv, 'utf8'), 'text/csv; charset=utf-8');
-      written.push(`logs-submissions-${key}: ${subRows[key].length}`);
+      await writeDetail(`logs-submissions-${key}.csv`, header, lines);
     }
     if (evRows[key].length) {
       evRows[key].sort((a, b) => a.at - b.at);
       const header = ['perth_time', 'kind', 'device', 'app_version', 'installed', 'via', 'jobs', 'company'];
       const lines = evRows[key].map(r => [r.perthTime, r.kind, r.device, r.appVersion, r.installed, r.via, r.jobs, r.company].map(csvCell).join(','));
-      const csv = [header.join(','), ...lines].join('\r\n') + '\r\n';
-      await ncUpload(`${dir}/logs-usage-${key}.csv`, Buffer.from(csv, 'utf8'), 'text/csv; charset=utf-8');
-      written.push(`logs-usage-${key}: ${evRows[key].length}`);
+      await writeDetail(`logs-usage-${key}.csv`, header, lines);
     }
     // Permanent monthly totals, rewritten from whatever detail is still in
-    // Firestore. Once a month has fully expired this stops changing, so it
-    // becomes the long-term record the dashboard reads for older months.
-    await ncUpload(`${dir}/totals-${key}.csv`, Buffer.from(monthlyTotals(subRows[key], evRows[key]), 'utf8'), 'text/csv; charset=utf-8');
-    written.push(`totals-${key}`);
+    // Firestore. Once a month has fully expired the file must NOT be rewritten
+    // with zeros - that would wipe the long-term record the dashboard reads.
+    // So an empty month is only written when there is nothing there yet
+    // (months from before the app was used).
+    const monthHasRows = subRows[key].length || evRows[key].length;
+    if (monthHasRows || !(await ncFileExists(`${dir}/totals-${key}.csv`))) {
+      await ncUpload(`${dir}/totals-${key}.csv`, Buffer.from(monthlyTotals(subRows[key], evRows[key]), 'utf8'), 'text/csv; charset=utf-8');
+      written.push(`totals-${key}${monthHasRows ? '' : ' (empty)'}`);
+    } else {
+      // No records left for this month (expired, or never had any); leave the
+      // permanent totals exactly as they are.
+      written.push(`totals-${key} kept`);
+    }
   }
   console.log('Daily usage archive: ' + written.join(', '));
   return written;

@@ -263,11 +263,14 @@ expire:
 | `logs-usage-YYYY-MM.csv` | every app open / calendar import that month |
 | `totals-YYYY-MM.csv` | that month's summary (`metric,item,value`) — the permanent record |
 
-A month that has fully expired loses its `logs-*` file but its `totals-*`
-file stops changing, so it stays as the long-term number. The **Older months**
-card on the dashboard reads those totals through `usageArchive` (below) — once
-a month drops out of the live 90-day window, its figures come from the archive
-instead of vanishing.
+Because records expire 90 days after they're written, a month's detail is at
+its fullest *just before* that. So the archiver only ever **grows** those
+files: it reads the existing CSV first and keeps it if the new one would be
+shorter. `totals-*` is rewritten every run while the month still has records,
+and then left alone forever — an expired month must never be rewritten as
+zeros, or the long-term record is destroyed. The **Older months** card on the
+dashboard reads those totals through `usageArchive` (below), so a month's
+figures move from the live cards to the archive table rather than vanishing.
 
 **`usageArchive`** (same region, `invoker: 'public'` but token-gated):
 admin.html is a public static page and can't hold the Nextcloud app password,
