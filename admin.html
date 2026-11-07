@@ -152,11 +152,17 @@
       <div class="tiles">
         <div class="tile"><b id="cToday">–</b><span>today</span></div>
         <div class="tile"><b id="cWeek">–</b><span>this week</span></div>
-        <div class="tile"><b id="cTotal">–</b><span>all (~60 d)</span></div>
+        <div class="tile"><b id="cTotal">–</b><span>all (90 d)</span></div>
       </div>
       <div class="chart2" id="calBars"></div>
       <div class="split" id="calSplit"></div>
       <div class="legend">A count is saved only when a mobilisation email actually lands on the calendar — re-reading a bad paste doesn't count. "Shared in" = sent from Gmail, "pasted" = typed/pasted in the app. Days without a bar had no imports.</div>
+    </div>
+
+    <div class="card">
+      <h2>Older months <span class="sub" id="archSub"></span></h2>
+      <div class="scroll"><table id="archTable"></table></div>
+      <div class="legend">Firestore keeps 90 days of detail; every month is archived to Nextcloud › PWA › Norwest-forms › Usage long before it expires, and this table is read from those files (<code>totals-YYYY-MM.csv</code>). The same folder holds the full per-day and per-person logs (<code>logs-*.csv</code>).</div>
     </div>
 
     <div class="card">
@@ -204,8 +210,9 @@
     </div>
 
     <div class="card small muted">
-      Live data covers about the last 60 days (older records expire).
-      Older history: Nextcloud › PWA › Norwest-forms › Usage (<code>usage-YYYY-MM.csv</code>, updated every Sunday 11:00).
+      These figures cover the last 90 days (Firestore keeps that much detail). Nothing is lost: every month is archived before it
+      expires to Nextcloud › PWA › Norwest-forms › Usage (<code>logs-*.csv</code>, refreshed daily, plus a permanent
+      <code>totals-YYYY-MM.csv</code> per month).
       <div id="signedInAs" style="margin-top:6px;"></div>
     </div>
   </div>
@@ -227,7 +234,11 @@ const firebaseConfig = {
 };
 // Same Apps Script endpoint as index.html's JOB_NUMBERS_URL - keep in sync.
 const JOB_NUMBERS_URL = "https://script.google.com/macros/s/AKfycbybxIi5mpwWfOangXUqF785UvoQl02v3ldL9mLWJZoWCwKIgEXq514M81OqQGymGL6EFQ/exec";
-const WINDOW_DAYS = 70;
+// How far back the live listeners read. Detail is kept 90 days in Firestore
+// (archived to Nextcloud well before it expires), so "all time" figures mean
+// "all time still in Firestore"; older months are in the Nextcloud archive
+// (PWA > Norwest-forms > Usage), which also carries permanent monthly totals.
+const WINDOW_DAYS = 90;
 const GRID_WEEKS = 8;
 const FORMS = ['timesheet', 'leave', 'training', 'medical'];
 const CATEGORY = { jobnumbers: 'Job numbers', pdf: 'PDF / sending', looks: 'Looks wrong', idea: 'Idea / request', other: 'Other' };
@@ -269,6 +280,7 @@ const nameKey = n => (n || '').trim().replace(/\s+/g, ' ').toLowerCase();
 // ---- state
 let subs = [], reports = [], usage = [], subsLive = false, repsLive = false, usageLive = false, gotData = false;
 let jobHealth = { state: 'loading' };
+let archive = { state: 'idle', months: [] };     // older months, read from Nextcloud via usageArchive
 let unsubs = [];
 
 // ---- auth
@@ -307,6 +319,11 @@ const PAGE_URL = useEmu ? location.origin + location.pathname + '?emulator' : 'h
 const PASSKEY_FN = useEmu
   ? 'http://127.0.0.1:5001/demo-norwest/australia-southeast1/adminPasskeySignIn'
   : 'https://australia-southeast1-norwest-forms.cloudfunctions.net/adminPasskeySignIn';
+// Reads the permanent monthly totals from Nextcloud (admin.html can't hold the
+// app password). Takes this page's Firebase ID token as a Bearer token.
+const USAGE_ARCHIVE_FN = useEmu
+  ? 'http://127.0.0.1:5001/demo-norwest/australia-southeast1/usageArchive'
+  : 'https://australia-southeast1-norwest-forms.cloudfunctions.net/usageArchive';
 const PKCE_KEY = 'norwestAdminPkce';
 const b64url = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
@@ -359,6 +376,7 @@ $('deniedSignOut').onclick = doSignOut;
 onAuthStateChanged(auth, user => {
   unsubs.forEach(u => u()); unsubs = [];
   subs = []; reports = []; usage = []; subsLive = repsLive = usageLive = gotData = false;
+  archive = { state: 'idle', months: [] };
   show('signOutBtn', !!user);
   show('live', false);
   if (!user) { show('gate', true); show('denied', false); show('dash', false); return; }
@@ -377,8 +395,10 @@ function denied(user) {
 }
 
 function start(user) {
-  const since = Timestamp.fromDate(new Date(Date.now() - WINDOW_DAYS * 864e5));
   const onErr = e => { if (e.code === 'permission-denied') denied(user); else console.error(e); };
+  // The 90-day detail window (see WINDOW_DAYS at the top). Older months are in
+  // the Nextcloud archive rather than read from here.
+  const since = Timestamp.fromDate(new Date(Date.now() - WINDOW_DAYS * 864e5));
   unsubs.push(onSnapshot(query(collection(db, 'submissions'), where('submittedAt', '>=', since), orderBy('submittedAt')),
     { includeMetadataChanges: true },
     snap => {
@@ -403,6 +423,24 @@ function start(user) {
       render();
     }, onErr));
   loadJobNumbers();
+  loadArchive(user);
+}
+
+// Older months. Firestore only has 90 days of detail, so anything past that
+// comes from the Nextcloud monthly totals that archiveUsageDaily writes.
+// Fails quietly: the live cards above are the important ones.
+async function loadArchive(user) {
+  archive = { state: 'loading', months: [] };
+  try {
+    const token = await user.getIdToken();
+    const r = await fetch(USAGE_ARCHIVE_FN, { headers: { Authorization: 'Bearer ' + token }, cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    archive = { state: 'ok', months: Array.isArray(j.months) ? j.months : [] };
+  } catch (e) {
+    archive = { state: 'error', months: [], error: e.message };
+  }
+  render();
 }
 
 async function loadJobNumbers() {
@@ -495,7 +533,7 @@ function render() {
   const allPhones = new Set(opens.map(r => r.device).filter(Boolean)).size;
   $('usageSplit').innerHTML = opens.length
     ? `<span class="pill ok">${installed} installed app</span><span class="pill">${opens.length - installed} in browser</span>`
-      + `<span class="pill">${allPhones} phone${allPhones === 1 ? '' : 's'} (~60 d)</span>`
+      + `<span class="pill">${allPhones} phone${allPhones === 1 ? '' : 's'} seen</span>`
     : '';
 
   const viaShare = imports.filter(r => r.via === 'share').length;
@@ -515,6 +553,31 @@ function render() {
     ? `<span class="pill ok">${viaShare} shared in</span><span class="pill">${viaPaste} pasted</span>`
       + `<span class="pill">${jobsAdded} job${jobsAdded === 1 ? '' : 's'} added</span><span class="pill">${impPhones} phone${impPhones === 1 ? '' : 's'}</span>`
     : '<span class="pill">No calendar imports logged yet</span>';
+
+  // ---- older months (Nextcloud archive, read through usageArchive)
+  const MON_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const monLabel = key => { const [y, m] = key.split('-').map(Number); return `${MON_FULL[m - 1]} ${y}`; };
+  // The current month and the one before are still fully (or partly) in the
+  // live window above; only show months that are actually finished.
+  const thisMonth = `${perth(now).getUTCFullYear()}-${String(perth(now).getUTCMonth() + 1).padStart(2, '0')}`;
+  const lastMonth = (() => { const p = perth(now); let y = p.getUTCFullYear(), m = p.getUTCMonth(); if (m < 1) { m = 12; y -= 1; } return `${y}-${String(m).padStart(2, '0')}`; })();
+  const oldMonths = archive.months.filter(m => m.month < lastMonth);
+  if (archive.state === 'ok' && oldMonths.length) {
+    const tot = oldMonths.reduce((a, m) => ({ opens: a.opens + m.opens, imports: a.imports + m.imports, jobs: a.jobs + m.jobs, submissions: a.submissions + m.submissions }), { opens: 0, imports: 0, jobs: 0, submissions: 0 });
+    $('archSub').textContent = `(before ${monLabel(lastMonth)})`;
+    $('archTable').innerHTML = '<tr><th>Month</th><th>App opens</th><th>Calendar imports</th><th>Jobs added</th><th>Forms sent</th><th>People</th></tr>'
+      + oldMonths.map(m => `<tr><td>${monLabel(m.month)}</td><td>${m.opens}</td><td>${m.imports}</td><td>${m.jobs}</td><td>${m.submissions}</td><td>${m.people}</td></tr>`).join('')
+      + `<tr><td><b>Total</b></td><td><b>${tot.opens}</b></td><td><b>${tot.imports}</b></td><td><b>${tot.jobs}</b></td><td><b>${tot.submissions}</b></td><td></td></tr>`;
+  } else if (archive.state === 'ok') {
+    $('archSub').textContent = '';
+    $('archTable').innerHTML = '<tr><td class="muted small">Nothing archived yet — the archive starts once a month has finished, so this fills in from the start of next month.</td></tr>';
+  } else if (archive.state === 'error') {
+    $('archSub').textContent = '';
+    $('archTable').innerHTML = `<tr><td class="muted small">Couldn’t read the archive just now (${esc(archive.error || 'unknown error')}). The figures above are unaffected.</td></tr>`;
+  } else {
+    $('archSub').textContent = '';
+    $('archTable').innerHTML = '<tr><td class="muted small">Loading…</td></tr>';
+  }
 
   // ---- this pay week
   const cw = weekStats(cur);
@@ -565,7 +628,7 @@ function render() {
   // ---- forms
   const allForms = Object.fromEntries(FORMS.map(f => [f, subs.filter(r => r.formType === f).length]));
   const byCo = (f, co) => subs.filter(r => r.formType === f && r.company === co).length;
-  $('formTable').innerHTML = '<tr><th>Form</th><th>This week</th><th>NCH</th><th>NWP</th><th>All (~60 d)</th></tr>' +
+  $('formTable').innerHTML = '<tr><th>Form</th><th>This week</th><th>NCH</th><th>NWP</th><th>All (90 d)</th></tr>' +
     FORMS.map(f => `<tr><td>${f[0].toUpperCase() + f.slice(1)}</td><td>${cw.forms[f]}</td><td>${byCo(f, 'NCH')}</td><td>${byCo(f, 'NWP')}</td><td>${allForms[f]}</td></tr>`).join('');
 
   // ---- help reports
@@ -581,7 +644,7 @@ function render() {
       `<span>${esc(CATEGORY[r.category] || r.category)}</span><span class="st ${esc(st)}">${esc(st)}</span>` +
       (r.nextcloudUrl ? `<a href="${esc(r.nextcloudUrl)}" target="_blank" rel="noopener">Nextcloud</a>` : '') + '</div>' +
       `<div class="msg">${esc(r.message)}</div>` + (meta ? `<div class="meta">${esc(meta)}</div>` : '') + errs + '</div>';
-  }).join('') : '<div class="muted small">No help reports in the last ~60 days.</div>';
+  }).join('') : '<div class="muted small">No help reports yet.</div>';
 
   // ---- health
   const h = [];

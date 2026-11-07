@@ -17,7 +17,7 @@ the week ending **Sunday** and are due by **Monday 10am**.
 | Job numbers sheet | Google Sheet with a `JobNumbers` tab, in the Google account that receives Norwest's "Visual Dispatch" emails | One row per month: `Month, Port Hedland, Newman, Flights, Logistics, Medicals` |
 | Job Numbers API | Apps Script project **"Job Numbers API"**, inside that sheet (Extensions → Apps Script). Source: `apps-script/JobNumbers.gs` | Serves the sheet to the app, reads the monthly email, emails you if a month is missing |
 | Gmail filter + label | Same Google account. Label `Process-JobNumbers` | Marks the monthly email so the script picks it up |
-| Usage log | Firebase project `norwest-forms`, Firestore collection `submissions` | One record per real "Submit & Send" (ongoing; ~60 days kept, weekly archive to Nextcloud) |
+| Usage log | Firebase project `norwest-forms`, Firestore collection `submissions` | One record per real "Submit & Send" (ongoing; 90 days kept in Firestore, monthly archive to Nextcloud keeps it forever — section 8a) |
 | Usage events | Same project, collection `usageEvents` (since v1.45) | App opens + calendar email imports, anonymous (random per-phone id only). See section 8a |
 | Admin dashboard | `admin.html` in this repo (owner only, Google or passkey sign-in) | Live usage + calendar-import stats, help reports. See section 8c |
 
@@ -191,8 +191,10 @@ notification server and every worker opting in).
 
 Every real "Submit & Send" logs form type, name, company, IP and time to
 Firestore. The Medical & D&A claim is logged **without a name** on purpose.
-Records carry `expireAt` (60 days) and the TTL policy deletes them after
-that. Logging keeps going until the owner switches it off (to stop it,
+Records carry `expireAt` (90 days) and the TTL policy deletes them after
+that — but `archiveUsageDaily` (8a) copies every month to Nextcloud long
+before it expires, so history is never lost. Logging keeps going until the
+owner switches it off (to stop it,
 remove the `logUsageEvent(...)` calls in `index.html` and update the
 company-picker disclosure). The disclosure on the company picker must stay
 while it runs.
@@ -244,21 +246,48 @@ Deliberately **not** identifying: no name, no IP, no form contents. The only
 per-phone value is `device`, a random 16-hex id the phone makes for itself on
 first use (`usageDeviceId`, localStorage `norwestDeviceId`) — never linked to a
 person, so the dashboard can say "9 phones" but not who. Records carry
-`expireAt` (60 days) exactly like `submissions`. `inst` = the app running as
+`expireAt` (90 days) exactly like `submissions`. `inst` = the app running as
 the installed PWA rather than a browser tab.
 
 Reading it: the **Usage** and **Calendar email import** cards at the top of
 the admin dashboard (8c). Both are live and bucketed by **Perth** calendar day.
 
+**Detail kept 90 days, history kept forever.** TTL deletes each record ~90
+days on, but `archiveUsageDaily` (2:30 am Perth, daily) rewrites every month of
+the last four into Nextcloud › `PWA/Norwest-forms/Usage` well before it can
+expire:
+
+| file | what's in it |
+|---|---|
+| `logs-submissions-YYYY-MM.csv` | every form sent that month, one row each |
+| `logs-usage-YYYY-MM.csv` | every app open / calendar import that month |
+| `totals-YYYY-MM.csv` | that month's summary (`metric,item,value`) — the permanent record |
+
+A month that has fully expired loses its `logs-*` file but its `totals-*`
+file stops changing, so it stays as the long-term number. The **Older months**
+card on the dashboard reads those totals through `usageArchive` (below) — once
+a month drops out of the live 90-day window, its figures come from the archive
+instead of vanishing.
+
+**`usageArchive`** (same region, `invoker: 'public'` but token-gated):
+admin.html is a public static page and can't hold the Nextcloud app password,
+so it sends its Firebase ID token as `Authorization: Bearer`, and the function
+checks the verified email against `ADMIN_EMAILS` before reading Nextcloud. It
+returns `{ months: [{ month, opens, imports, jobs, submissions, people,
+devices }] }` for up to 24 months. Monthly totals only — per-day and per-person
+detail stays in the live window; the full `logs-*.csv` are in the Usage folder
+if ever needed.
+
 **TTL for the new collection — one-off, STILL TO DO as of 6 Nov 2026** (the
 13 Oct policy only covers `submissions`; this collection needs its own). Until
 it is set, records stay in the database even though they carry `expireAt` (the
-dashboard ignores anything older than its 70-day window either way):
+dashboard ignores anything older than its 90-day window either way):
 ```
 gcloud firestore fields ttls update expireAt --collection-group=usageEvents --enable-ttl --project=norwest-forms
 ```
 Check it took: `gcloud firestore fields ttls list --project norwest-forms`
-should show `usageEvents` as ACTIVE next to `submissions`.
+should show `usageEvents` as ACTIVE next to `submissions`. Do NOT let a month
+expire before the archiver has run at least once for it.
 
 To stop counting opens, remove the `logAppOpen()` call at the bottom of
 `index.html`; to stop counting imports, remove the two `logCalImport(...)`
@@ -287,8 +316,8 @@ installed vs browser), calendar email imports (today/week/all, shared-in vs
 pasted, jobs added), this pay week, week by week, per person, who's
 not in yet, forms, help reports (failed/partial highlighted, Nextcloud
 links) and health (this month's job numbers, latest report). Firestore
-only holds ~60 days; older history is in Nextcloud › PWA › Norwest-forms ›
-Usage.
+holds 90 days of detail; anything older shows in the **Older months** card,
+read from the Nextcloud monthly totals (8a's `usageArchive`).
 
 **How it's locked:** sign-in + `firestore.rules` (`isAdmin()`: a verified
 sign-in whose email is in the list - `myslewer@gmail.com`,

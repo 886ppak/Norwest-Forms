@@ -37,6 +37,9 @@ service cloud.firestore {
                      && request.resource.data.ip is string
                      && request.resource.data.ip.size() <= 45
                      && request.resource.data.submittedAt is timestamp
+                     // Kept 90 days in Firestore, then TTL deletes it. Every
+                     // month is archived to Nextcloud before that (functions
+                     // archiveUsageDaily), so nothing is lost.
                      && request.resource.data.expireAt is timestamp
                      && request.resource.data.expireAt > request.resource.data.submittedAt;
       allow get, list: if isAdmin();
@@ -90,9 +93,8 @@ service cloud.firestore {
     // (index.html logAppOpen / logCalImport). Same no-login, create-only,
     // tightly shaped approach as `submissions`, and deliberately NOT
     // identifying: no name, no company beyond NCH/NWP, no IP. The device id
-    // is a random value the phone makes for itself, never tied to a person,
-    // and every record is gone after ~60 days (expireAt + TTL - the TTL
-    // policy needs adding for this collection too, see RUNBOOK 8d).
+    // is a random value the phone makes for itself, never tied to a person.
+    // Kept 90 days in Firestore, archived to Nextcloud well before that.
     match /usageEvents/{eventId} {
       allow create: if request.resource.data.keys().hasOnly(['kind', 'at', 'expireAt', 'device', 'appVersion', 'inst', 'via', 'jobs', 'company'])
                      && request.resource.data.kind is string

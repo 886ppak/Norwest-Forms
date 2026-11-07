@@ -251,14 +251,15 @@ exports.cleanupOrphanHelpShots = onSchedule(
 );
 
 // ---- Usage log -> Nextcloud (long-term history) --------------------------
-// Firestore keeps the usage log (submissions/) for ~60 days (expireAt + TTL)
-// and the admin dashboard reads it live from there. Once a week (Sunday
-// 11:00 Perth) this archives each month's rows to a CSV in Nextcloud:
+// Firestore keeps the usage log (submissions/) with NO expiry since
+// 2026-11-06 - the owner chose to keep everything until logging is switched
+// off - and the admin dashboard reads it live from there. This weekly
+// archive (Sunday 11:00 Perth) is therefore a backup and a spreadsheet-
+// friendly copy rather than the only long-term record. It writes each
+// month's rows to Nextcloud:
 //   <NEXTCLOUD_REPORTS_PATH>/Usage/usage-YYYY-MM.csv
 // Only the current and previous Perth month are rewritten (whole file each
-// time - WebDAV has no append), so a month's last days are picked up by the
-// first run of the next month, older months' files are never touched, and
-// stay as the permanent history after Firestore expires the rows.
+// time - WebDAV has no append), so older months' files are never touched.
 // Medical claims stay anonymous (no name is ever logged for them).
 
 // Perth date parts for a JS Date (AWST, UTC+8, no daylight saving)
@@ -330,6 +331,168 @@ exports.exportUsageToNextcloud = onSchedule(
   async () => { await exportUsage(); }
 );
 
+// ---- Daily archive: Firestore detail -> Nextcloud, before TTL deletes it --
+// Both collections keep detail 90 days in Firestore (expireAt + TTL) and the
+// owner's dashboard reads that window. This runs daily and, for every month
+// that still has rows, rewrites that month's full-detail CSV in Nextcloud and
+// a small permanent monthly-totals file. Old detail therefore survives in
+// Nextcloud for good, and the dashboard's "older months" are read from those
+// totals (owner chose monthly totals over full old detail, 6 Nov 2026).
+//
+// WHY DAILY AND NOT ONCE A MONTH: TTL deletion is neither instant nor exact,
+// so a monthly-only job could lose rows if a single run failed. This always
+// re-exports a month that still has rows in Firestore and only stops touching
+// a month once Firestore has nothing left in it - by then its file is
+// complete. A failed run therefore self-heals the next day.
+//
+// Files (in NEXTCLOUD_REPORTS_PATH/Usage):
+//   logs-submissions-YYYY-MM.csv  full detail, one row per submission
+//   logs-usage-YYYY-MM.csv        full detail, one row per usage event
+//   totals-YYYY-MM.csv            permanent aggregate: per-day counts, plus
+//                                 per-person/per-form totals for submissions
+const ARCHIVE_MONTHS_BACK = 4;   // a 90-day TTL can only reach ~4 months
+
+// Perth month key ("2026-11") for a Date, and the last n month keys, newest first
+function perthMonthKey(date) {
+  const p = perthParts(date);
+  return `${p.y}-${String(p.m).padStart(2, '0')}`;
+}
+function monthKeysBack(n) {
+  const now = perthParts(new Date());
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    let y = now.y, m = now.m - i;
+    while (m < 1) { m += 12; y -= 1; }
+    out.push(`${y}-${String(m).padStart(2, '0')}`);
+  }
+  return out;
+}
+
+// Aggregate one month into metric,item,value rows - the shape the dashboard
+// reads for months older than its live 90-day window.
+function monthlyTotals(subRows, evRows) {
+  const rows = [['metric', 'item', 'value']];
+  const subDays = {}, formCount = {}, personDays = {}, companyCount = {};
+  let late = 0;
+  subRows.forEach(r => {
+    const day = r.perthTime.slice(0, 10);
+    subDays[day] = (subDays[day] || 0) + 1;
+    formCount[r.formType] = (formCount[r.formType] || 0) + 1;
+    if (r.company) companyCount[r.company] = (companyCount[r.company] || 0) + 1;
+    if (r.name) personDays[r.name.toLowerCase()] = (personDays[r.name.toLowerCase()] || 0) + 1;
+    if (r.late) late += 1;
+  });
+  const openDays = {}, impDays = {}, devices = new Set(), impDevices = new Set();
+  let opens = 0, imports = 0, jobs = 0, viaShare = 0;
+  evRows.forEach(r => {
+    const day = r.perthTime.slice(0, 10);
+    if (r.kind === 'open') {
+      opens += 1; openDays[day] = (openDays[day] || 0) + 1;
+      if (r.device) devices.add(r.device);
+    } else if (r.kind === 'calimport') {
+      imports += 1; impDays[day] = (impDays[day] || 0) + 1;
+      jobs += Number(r.jobs) || 0;
+      if (r.via === 'share') viaShare += 1;
+      if (r.device) impDevices.add(r.device);
+    }
+  });
+  rows.push(['submissions_total', '', subRows.length]);
+  rows.push(['submissions_late', '', late]);
+  rows.push(['submission_people', '', Object.keys(personDays).length]);
+  Object.entries(formCount).sort().forEach(([k, n]) => rows.push(['submission_form', k, n]));
+  Object.entries(companyCount).sort().forEach(([k, n]) => rows.push(['submission_company', k, n]));
+  rows.push(['app_opens', '', opens]);
+  rows.push(['app_devices', '', devices.size]);
+  rows.push(['cal_imports', '', imports]);
+  rows.push(['cal_import_devices', '', impDevices.size]);
+  rows.push(['cal_import_jobs', '', jobs]);
+  rows.push(['cal_import_shared_in', '', viaShare]);
+  rows.push(['cal_import_pasted', '', imports - viaShare]);
+  Object.entries(openDays).sort().forEach(([d, n]) => rows.push(['opens_day', d, n]));
+  Object.entries(impDays).sort().forEach(([d, n]) => rows.push(['imports_day', d, n]));
+  Object.entries(subDays).sort().forEach(([d, n]) => rows.push(['submissions_day', d, n]));
+  return rows.map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
+
+async function archiveUsageDaily() {
+  const db = getFirestore();
+  const base = NEXTCLOUD_REPORTS_PATH.value().replace(/\/+$/, '');
+  const dir = `${base}/Usage`;
+  let level = '';
+  for (const part of dir.split('/').filter(Boolean)) { level += '/' + part; await ncEnsureFolder(level); }
+
+  const months = monthKeysBack(ARCHIVE_MONTHS_BACK);
+  const earliest = months[months.length - 1] + '-01';
+  // Perth midnight on the 1st of the oldest month we care about
+  const since = Timestamp.fromDate(new Date(`${earliest}T00:00:00+08:00`));
+
+  const subsSnap = await db.collection('submissions').where('submittedAt', '>=', since).get();
+  const eventsSnap = await db.collection('usageEvents').where('at', '>=', since).get();
+
+  const subRows = {}, evRows = {};
+  months.forEach(k => { subRows[k] = []; evRows[k] = []; });
+
+  subsSnap.forEach(doc => {
+    const r = doc.data();
+    if (r.company === 'TEST') return;                       // Oct 2026 rules-check record
+    const at = r.submittedAt?.toDate ? r.submittedAt.toDate() : null;
+    if (!at) return;
+    const key = perthMonthKey(at);
+    if (!subRows[key]) return;
+    const w = payWeek(at);
+    const p = perthParts(at);
+    subRows[key].push({
+      at, perthTime: p.iso.slice(0, 16).replace('T', ' '), weekEnding: w.weekEnding, late: w.late,
+      formType: r.formType || '', company: r.company || '', name: (r.name || '').trim(), ip: r.ip || '',
+    });
+  });
+  eventsSnap.forEach(doc => {
+    const r = doc.data();
+    const at = r.at?.toDate ? r.at.toDate() : null;
+    if (!at) return;
+    const key = perthMonthKey(at);
+    if (!evRows[key]) return;
+    evRows[key].push({
+      at, perthTime: perthParts(at).iso.slice(0, 16).replace('T', ' '),
+      kind: r.kind || '', device: r.device || '', appVersion: r.appVersion || '',
+      installed: r.inst ? 'yes' : 'no', via: r.via || '',
+      jobs: r.jobs == null ? '' : r.jobs, company: r.company || '',
+    });
+  });
+
+  const written = [];
+  for (const key of months) {
+    if (subRows[key].length) {
+      subRows[key].sort((a, b) => a.at - b.at);
+      const header = ['perth_time', 'week_ending', 'late', 'form', 'company', 'name', 'ip'];
+      const lines = subRows[key].map(r => [r.perthTime, r.weekEnding, r.late ? 'yes' : '', r.formType, r.company, r.name, r.ip].map(csvCell).join(','));
+      const csv = [header.join(','), ...lines].join('\r\n') + '\r\n';
+      await ncUpload(`${dir}/logs-submissions-${key}.csv`, Buffer.from(csv, 'utf8'), 'text/csv; charset=utf-8');
+      written.push(`logs-submissions-${key}: ${subRows[key].length}`);
+    }
+    if (evRows[key].length) {
+      evRows[key].sort((a, b) => a.at - b.at);
+      const header = ['perth_time', 'kind', 'device', 'app_version', 'installed', 'via', 'jobs', 'company'];
+      const lines = evRows[key].map(r => [r.perthTime, r.kind, r.device, r.appVersion, r.installed, r.via, r.jobs, r.company].map(csvCell).join(','));
+      const csv = [header.join(','), ...lines].join('\r\n') + '\r\n';
+      await ncUpload(`${dir}/logs-usage-${key}.csv`, Buffer.from(csv, 'utf8'), 'text/csv; charset=utf-8');
+      written.push(`logs-usage-${key}: ${evRows[key].length}`);
+    }
+    // Permanent monthly totals, rewritten from whatever detail is still in
+    // Firestore. Once a month has fully expired this stops changing, so it
+    // becomes the long-term record the dashboard reads for older months.
+    await ncUpload(`${dir}/totals-${key}.csv`, Buffer.from(monthlyTotals(subRows[key], evRows[key]), 'utf8'), 'text/csv; charset=utf-8');
+    written.push(`totals-${key}`);
+  }
+  console.log('Daily usage archive: ' + written.join(', '));
+  return written;
+}
+
+exports.archiveUsageDaily = onSchedule(
+  { schedule: '30 2 * * *', timeZone: 'Australia/Perth', region: REGION, secrets: [NEXTCLOUD_APP_PASSWORD], timeoutSeconds: 300 },
+  async () => { await archiveUsageDaily(); }
+);
+
 // ---- Admin dashboard: "Sign in with passkey" --------------------------
 // Same approach as the myslewer app's passkeySignIn, so no paid Firebase
 // add-on (custom OIDC providers would need the Identity Platform upgrade):
@@ -399,5 +562,101 @@ exports.adminPasskeySignIn = onRequest(
     const link = await getAuth().generateSignInWithEmailLink(email, { url: ADMIN_PAGE_URL.value(), handleCodeInApp: true });
     console.log(`Admin passkey sign-in for ${email}`);
     res.json({ email, link });
+  }
+);
+
+// ---- archived monthly totals, read back by the dashboard ----------------
+// admin.html is a static public page, so it cannot hold the Nextcloud app
+// password. This hands it the permanent monthly-totals files from the Usage
+// folder once it proves who it is: a Firebase ID token whose email is an
+// admin. The dashboard uses these for months older than its live 90-day
+// window, so "all time" keeps meaning all time instead of "all 90 days".
+// Detail (per person, per day) stays in the live window by design - the
+// archive carries monthly totals only.
+const ARCHIVE_MONTHS_SHOWN = 24;
+
+async function ncDownload(davPath) {
+  const res = await fetch(ncDavUrl(davPath), { headers: { Authorization: ncAuthHeader() } });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GET ${davPath} failed: ${res.status}`);
+  return res.text();
+}
+
+// Minimal CSV split - company names are NCH/NWP today, but csvCell could
+// quote them, so handle quotes rather than assuming no commas.
+function csvSplit(line) {
+  const out = []; let cur = ''; let q = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (q) {
+      if (c === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c;
+    } else if (c === '"') { q = true; } else if (c === ',') { out.push(cur); cur = ''; } else cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+
+function parseTotalsCsv(text) {
+  const map = {};
+  for (const line of String(text).split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const [metric, item, value] = csvSplit(line);
+    if (!metric || metric === 'metric') continue;              // header
+    const key = item ? `${metric}|${item}` : metric;
+    map[key] = Number(value) || 0;
+  }
+  return map;
+}
+
+exports.usageArchive = onRequest(
+  { region: REGION, invoker: 'public', secrets: [NEXTCLOUD_APP_PASSWORD], timeoutSeconds: 60 },
+  async (req, res) => {
+    const origin = new URL(ADMIN_PAGE_URL.value()).origin;
+    res.set('Access-Control-Allow-Origin', origin);
+    res.set('Vary', 'Origin');
+    if (req.method === 'OPTIONS') {
+      res.set('Access-Control-Allow-Methods', 'GET');
+      res.set('Access-Control-Allow-Headers', 'Authorization');
+      res.set('Access-Control-Max-Age', '3600');
+      res.status(204).send('');
+      return;
+    }
+    if (req.method !== 'GET') { res.status(405).send('Method Not Allowed'); return; }
+
+    const auth = String(req.get('Authorization') || '');
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+    if (!token) { res.status(401).json({ error: 'Sign in first' }); return; }
+    let email;
+    try {
+      email = String((await getAuth().verifyIdToken(token)).email || '').toLowerCase();
+    } catch (e) {
+      res.status(401).json({ error: 'Sign in again' });
+      return;
+    }
+    if (!ADMIN_EMAILS.includes(email)) { res.status(403).json({ error: 'Not an admin account' }); return; }
+
+    const dir = `${NEXTCLOUD_REPORTS_PATH.value().replace(/\/+$/, '')}/Usage`;
+    const months = [];
+    try {
+      for (const key of monthKeysBack(ARCHIVE_MONTHS_SHOWN)) {
+        const csv = await ncDownload(`${dir}/totals-${key}.csv`);
+        if (!csv) continue;                       // month never archived (app unused)
+        const t = parseTotalsCsv(csv);
+        months.push({
+          month: key,
+          opens: t.app_opens || 0,
+          imports: t.cal_imports || 0,
+          jobs: t.cal_import_jobs || 0,
+          submissions: t.submissions_total || 0,
+          people: t.submission_people || 0,
+          devices: t.app_devices || 0,
+        });
+      }
+    } catch (e) {
+      console.error('usageArchive: read failed', e);
+      res.status(502).json({ error: 'Could not read the archive' });
+      return;
+    }
+    res.json({ months });
   }
 );

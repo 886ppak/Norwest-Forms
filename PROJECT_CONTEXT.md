@@ -509,12 +509,14 @@ no-key, CORS-friendly "what's my public IP" lookup) - not independently
 verified server-side; a self-reported IP is accurate enough for usage
 volume. (The project is on Blaze now for the Help-report functions.)
 
-`expireAt` is set 60 days out per event, and a Firestore TTL policy on
+`expireAt` is set 90 days out per event, and a Firestore TTL policy on
 that field (switched on 13 Oct 2026, state ACTIVE) deletes each record
-after its 60 days, so names/IPs don't pile up in Firestore. Long-term
-history is the weekly Nextcloud export (`exportUsageToNextcloud`, Sunday
-11:00 Perth, `PWA/Norwest-forms/Usage/usage-YYYY-MM.csv`; only the current
-and previous month are rewritten, older files are permanent).
+after its 90 days, so names/IPs don't pile up in Firestore. Long-term
+history is the daily Nextcloud archive (`archiveUsageDaily`, 02:30 Perth —
+`PWA/Norwest-forms/Usage/`): `logs-submissions-YYYY-MM.csv`,
+`logs-usage-YYYY-MM.csv` and the permanent `totals-YYYY-MM.csv` per month,
+all rewritten for the last four months on each run. The older weekly export
+(`exportUsageToNextcloud`, Sunday 11:00, `usage-YYYY-MM.csv`) still runs.
 
 **Reading the stats:** `tools/usage-stats.mjs` (read-only, needs the
 service account JSON in `NORWEST_FORMS_SERVICE_ACCOUNT`) lists submissions in
@@ -534,7 +536,7 @@ the version number top-left **5 times within ~3 s** in the app) is a live
 stats page for the owner only. It signs in with Google (Firebase Auth,
 popup with redirect fallback) or a passkey through the homelab's Authentik
 (see "Passkey sign-in" below) and reads `submissions` and `helpReports`
-directly with `onSnapshot` (last ~70 days), so numbers are live. Shows
+directly with `onSnapshot` (last 90 days), so numbers are live. Shows
 this pay week (same pay-week rule as `tools/usage-stats.mjs` / `payWeek()`
 in functions), week-by-week table and per-person grid (names merged
 ignoring case, resends once), who's not in yet this week, forms
