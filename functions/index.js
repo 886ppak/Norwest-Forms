@@ -707,7 +707,7 @@ const NCH_CLIENT_ID = 'FwUq7HZ6147XZ6hjOl6G37Z0MQJWPJ0EQPRRcNJt';
 const NCH_SESSION_SECRET = defineSecret('NCH_SESSION_SECRET');
 const NCH_SESSION_DAYS = 90;
 // The five calendar stores the phone keeps in localStorage. Nothing else is synced.
-const NCH_STORES = ['norwestCalJobs', 'norwestCalRoster', 'norwestCalOvr', 'norwestCalLeave', 'norwestCalName'];
+const NCH_STORES = ['norwestCalJobs', 'norwestCalRoster', 'norwestCalOvr', 'norwestCalLeave', 'norwestCalName', 'norwestProfile'];
 
 function nchSign(payload) {
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
