@@ -692,3 +692,156 @@ exports.usageArchive = onRequest(
     res.json({ months });
   }
 );
+
+// ---- NCH Forms sign-in + calendar sync (v1.53) -------------------------
+// Sign-in: passkey on signin.15buzza.au (Authentik app norwest-forms, public PKCE, no secret).
+// nchPasskeySignIn swaps the code for the account's email and hands back a signed session
+// token (HMAC, 90 days). The phone never gets a Firebase login; it only carries this token,
+// which the calendar functions verify. Calendar data lives in Firestore nchUsers/{email}
+// (admin SDK only; firestore.rules deny everything else to clients).
+// Set the secret once before deploying:  firebase functions:secrets:set NCH_SESSION_SECRET
+const { createHmac, timingSafeEqual } = require('crypto');
+const NCH_AUTH_URL = defineString('NCH_AUTH_URL', { default: 'https://signin.15buzza.au' });
+const NCH_PAGE_URL = defineString('NCH_PAGE_URL', { default: 'https://886ppak.github.io/Norwest-Forms/' });
+const NCH_CLIENT_ID = 'FwUq7HZ6147XZ6hjOl6G37Z0MQJWPJ0EQPRRcNJt';
+const NCH_SESSION_SECRET = defineSecret('NCH_SESSION_SECRET');
+const NCH_SESSION_DAYS = 90;
+// The five calendar stores the phone keeps in localStorage. Nothing else is synced.
+const NCH_STORES = ['norwestCalJobs', 'norwestCalRoster', 'norwestCalOvr', 'norwestCalLeave', 'norwestCalName'];
+
+function nchSign(payload) {
+  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const sig = createHmac('sha256', NCH_SESSION_SECRET.value()).update(body).digest('base64url');
+  return `${body}.${sig}`;
+}
+function nchVerify(token) {
+  if (typeof token !== 'string' || !token.includes('.')) return null;
+  const [body, sig] = token.split('.');
+  const want = createHmac('sha256', NCH_SESSION_SECRET.value()).update(body).digest('base64url');
+  const a = Buffer.from(sig), b = Buffer.from(want);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  const p = JSON.parse(Buffer.from(body, 'base64url').toString());
+  return p.exp && Date.now() < p.exp ? p : null;
+}
+function nchCors(req, res) {
+  res.set('Access-Control-Allow-Origin', new URL(NCH_PAGE_URL.value()).origin);
+  res.set('Vary', 'Origin');
+  if (req.method !== 'OPTIONS') return false;
+  res.set('Access-Control-Allow-Methods', 'POST, GET');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.set('Access-Control-Max-Age', '3600');
+  res.status(204).send('');
+  return true;
+}
+function nchEmailFrom(req) {
+  const m = (req.get('Authorization') || '').match(/^Bearer (.+)$/);
+  const p = m && nchVerify(m[1]);
+  return p ? p.email : null;
+}
+function nchDoc(email) {
+  return getFirestore().collection('nchUsers').doc(email);
+}
+
+exports.nchPasskeySignIn = onRequest(
+  { region: REGION, invoker: 'public', secrets: [NCH_SESSION_SECRET] },
+  async (req, res) => {
+    if (nchCors(req, res)) return;
+    if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
+    const { code, codeVerifier } = req.body || {};
+    if (typeof code !== 'string' || typeof codeVerifier !== 'string' || code.length > 512 || codeVerifier.length > 256) {
+      res.status(400).json({ error: 'Bad request' });
+      return;
+    }
+    let info;
+    try {
+      const base = NCH_AUTH_URL.value();
+      const tr = await fetch(`${base}/application/o/token/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ grant_type: 'authorization_code', code, code_verifier: codeVerifier,
+          redirect_uri: NCH_PAGE_URL.value(), client_id: NCH_CLIENT_ID }),
+      });
+      const tj = await tr.json().catch(() => ({}));
+      if (!tr.ok || !tj.access_token) {
+        res.status(401).json({ error: 'That sign-in didn’t go through. Try again.' });
+        return;
+      }
+      const ur = await fetch(`${base}/application/o/userinfo/`, { headers: { Authorization: `Bearer ${tj.access_token}` } });
+      info = await ur.json();
+    } catch (e) {
+      console.error('nchPasskeySignIn: Authentik exchange failed', e);
+      res.status(502).json({ error: 'Could not reach the sign-in server. Try again shortly.' });
+      return;
+    }
+    const email = String(info.email || info.preferred_username || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      res.status(403).json({ error: 'No email on that account.' });
+      return;
+    }
+    const name = String(info.name || '').trim().slice(0, 120);
+    const token = nchSign({ email, exp: Date.now() + NCH_SESSION_DAYS * 86400000 });
+    res.json({ token, email, name });
+  }
+);
+
+exports.nchCalendarGet = onRequest(
+  { region: REGION, invoker: 'public', secrets: [NCH_SESSION_SECRET] },
+  async (req, res) => {
+    if (nchCors(req, res)) return;
+    const email = nchEmailFrom(req);
+    if (!email) { res.status(401).json({ error: 'Sign in again.' }); return; }
+    const snap = await nchDoc(email).get();
+    const data = snap.exists ? snap.data() : {};
+    res.json({ stores: data.stores || {} });
+  }
+);
+
+// Per-store merge: a store is replaced only when the incoming copy is newer than the stored one.
+exports.nchCalendarPut = onRequest(
+  { region: REGION, invoker: 'public', secrets: [NCH_SESSION_SECRET] },
+  async (req, res) => {
+    if (nchCors(req, res)) return;
+    if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
+    const email = nchEmailFrom(req);
+    if (!email) { res.status(401).json({ error: 'Sign in again.' }); return; }
+    const incoming = (req.body && req.body.stores) || {};
+    const clean = {};
+    for (const key of NCH_STORES) {
+      const item = incoming[key];
+      if (!item) continue;
+      const value = item.value === null ? null : String(item.value);
+      if (value !== null && value.length > 400000) { res.status(413).json({ error: 'Too much data in one store.' }); return; }
+      clean[key] = { value, updatedAt: Number(item.updatedAt) || 0 };
+    }
+    const ref = nchDoc(email);
+    const merged = await getFirestore().runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const stores = (snap.exists && snap.data().stores) || {};
+      for (const [key, item] of Object.entries(clean)) {
+        const cur = stores[key];
+        if (!cur || item.updatedAt > (cur.updatedAt || 0)) stores[key] = item;
+      }
+      tx.set(ref, { stores, email, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      return stores;
+    });
+    res.json({ stores: merged });
+  }
+);
+
+// Daily copy of every signed-in calendar to Nextcloud: <REPORTS_PATH>/Calendars/<email>.json
+exports.nchCalendarBackup = onSchedule(
+  { schedule: '15 3 * * *', timeZone: 'Australia/Perth', region: REGION, secrets: [NEXTCLOUD_APP_PASSWORD], timeoutSeconds: 300 },
+  async () => {
+    const base = NEXTCLOUD_REPORTS_PATH.value().replace(/\/+$/, '');
+    const dir = `${base}/Calendars`;
+    await ncEnsureFolder(dir);
+    const docs = await getFirestore().collection('nchUsers').get();
+    let n = 0;
+    for (const d of docs.docs) {
+      const payload = { email: d.id, exportedAt: new Date().toISOString(), stores: d.data().stores || {} };
+      await ncUpload(`${dir}/${d.id}.json`, Buffer.from(JSON.stringify(payload, null, 2)), 'application/json');
+      n++;
+    }
+    console.log(`nchCalendarBackup wrote ${n} calendar(s)`);
+  }
+);
