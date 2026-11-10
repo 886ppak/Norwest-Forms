@@ -618,7 +618,7 @@ function render() {
   const gridWeeks = weeks;
   const keys = Object.keys(spell).sort((a, b) => display(a).localeCompare(display(b)));
   $('personGrid').innerHTML = '<tr><th>Name</th>' + gridWeeks.map(we => `<th>${fmtWeek(we).replace(' ', '<br>')}</th>`).join('') + '</tr>' +
-    (keys.length ? keys.map(k => '<tr><td>' + esc(display(k)) + (k in instBy ? (instBy[k] ? ' <span class="mk ok" title="installed app">▣</span>' : ' <span class="muted" title="browser">▢</span>') : '') + `<span class="co">${esc(company[k] || '')}</span></td>` + gridWeeks.map(we => {
+    (keys.length ? keys.map(k => '<tr><td>' + (k in instBy ? (instBy[k] ? '<span class="mk ok" title="installed app">▣</span> ' : '<span class="muted" title="browser">▢</span> ') : '') + esc(display(k)) + `<span class="co">${esc(company[k] || '')}</span></td>` + gridWeeks.map(we => {
       const mine = (byWeek[we] || []).filter(r => r.key === k);
       const ts = mine.filter(r => r.formType === 'timesheet');
       if (ts.length) return ts.some(r => !r.late) ? '<td><span class="mk ok">✓</span></td>' : '<td><span class="mk late">L</span></td>';
