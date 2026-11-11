@@ -700,7 +700,7 @@ exports.usageArchive = onRequest(
 // which the calendar functions verify. Calendar data lives in Firestore nchUsers/{email}
 // (admin SDK only; firestore.rules deny everything else to clients).
 // Set the secret once before deploying:  firebase functions:secrets:set NCH_SESSION_SECRET
-const { createHmac, timingSafeEqual } = require('crypto');
+const { createHmac, timingSafeEqual, randomBytes } = require('crypto');
 const NCH_AUTH_URL = defineString('NCH_AUTH_URL', { default: 'https://signin.15buzza.au' });
 const NCH_PAGE_URL = defineString('NCH_PAGE_URL', { default: 'https://886ppak.github.io/Norwest-Forms/' });
 const NCH_CLIENT_ID = 'FwUq7HZ6147XZ6hjOl6G37Z0MQJWPJ0EQPRRcNJt';
@@ -790,9 +790,12 @@ exports.nchCalendarGet = onRequest(
     if (nchCors(req, res)) return;
     const email = nchEmailFrom(req);
     if (!email) { res.status(401).json({ error: 'Sign in again.' }); return; }
-    const snap = await nchDoc(email).get();
+    const [snap, gsnap] = await Promise.all([nchDoc(email).get(), gmailDoc(email).get()]);
     const data = snap.exists ? snap.data() : {};
-    res.json({ stores: data.stores || {} });
+    const g = gsnap.exists ? gsnap.data() : null;
+    // Gmail summary for the phone: the jobs only, never the token or the processed ids.
+    const gmail = g ? { connected: true, status: g.status || 'ok', jobs: g.jobs || [] } : { connected: false, status: 'none', jobs: [] };
+    res.json({ stores: data.stores || {}, gmail });
   }
 );
 
@@ -843,5 +846,136 @@ exports.nchCalendarBackup = onSchedule(
       n++;
     }
     console.log(`nchCalendarBackup wrote ${n} calendar(s)`);
+  }
+);
+
+// ===== Gmail job import (multi-user, Google Testing mode) =====
+// Each signed-in NCH user can connect their own Gmail (read-only). The hourly
+// scan reads their mobilisation emails, keeps only their own job rows, and
+// stores them in nchGmail/{email}. nchCalendarGet hands them to the phone.
+// Logic lives in gmail-core.js (tested offline). Set secrets before deploying:
+//   firebase functions:secrets:set GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GMAIL_TOKEN_KEY
+const gmailCore = require('./gmail-core.js');
+const GOOGLE_CLIENT_ID = defineSecret('GOOGLE_CLIENT_ID');
+const GOOGLE_CLIENT_SECRET = defineSecret('GOOGLE_CLIENT_SECRET');
+const GMAIL_TOKEN_KEY = defineSecret('GMAIL_TOKEN_KEY');
+const NCH_GMAIL_CALLBACK_URL = defineString('NCH_GMAIL_CALLBACK_URL', {
+  default: `https://${REGION}-norwest-forms.cloudfunctions.net/nchGmailCallback`,
+});
+const NCH_GMAIL_QUERY = defineString('NCH_GMAIL_QUERY', {
+  default: 'newer_than:120d (subject:mobilisation OR subject:"travel confirmation" OR subject:mobe)',
+});
+const GMAIL_SECRETS = [NCH_SESSION_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GMAIL_TOKEN_KEY];
+// Only these accounts may connect Gmail for now (owner only). Widen when ready.
+const GMAIL_ALLOWED = ['myslewer@gmail.com', 'aiden.tunupopo@gmail.com'];
+
+function gmailDoc(email) {
+  return getFirestore().collection('nchGmail').doc(email);
+}
+
+// The name to look for on the email: the one the person set in their profile on the phone.
+function nchNameFrom(data) {
+  const stores = (data && data.stores) || {};
+  try {
+    const p = stores.norwestProfile && JSON.parse(stores.norwestProfile.value || '{}');
+    if (p && p.name) return String(p.name).trim();
+  } catch (e) { /* fall through */ }
+  const raw = stores.norwestCalName && stores.norwestCalName.value;
+  if (!raw) return '';
+  try { const v = JSON.parse(raw); return typeof v === 'string' ? v.trim() : ''; }
+  catch (e) { return String(raw).trim(); }
+}
+
+// Step 1: the phone asks for a Google sign-in link. Returns the URL to open.
+exports.nchGmailStart = onRequest(
+  { region: REGION, invoker: 'public', secrets: GMAIL_SECRETS },
+  async (req, res) => {
+    if (nchCors(req, res)) return;
+    if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
+    const email = nchEmailFrom(req);
+    if (!email) { res.status(401).json({ error: 'Sign in again.' }); return; }
+    if (!GMAIL_ALLOWED.includes(email)) { res.status(403).json({ error: 'Gmail import is not open to your account yet.' }); return; }
+    const state = nchSign({ purpose: 'gmail', email, nonce: randomBytes(12).toString('base64url'), exp: Date.now() + 10 * 60000 });
+    const url = gmailCore.buildAuthUrl({
+      clientId: GOOGLE_CLIENT_ID.value(), redirectUri: NCH_GMAIL_CALLBACK_URL.value(), state,
+    });
+    res.json({ url });
+  }
+);
+
+// Step 2: Google sends the person back here with a code. Exchange it and store the refresh token encrypted.
+exports.nchGmailCallback = onRequest(
+  { region: REGION, invoker: 'public', secrets: GMAIL_SECRETS },
+  async (req, res) => {
+    const back = (q) => res.redirect(302, NCH_PAGE_URL.value() + '?gmail=' + q);
+    const st = nchVerify(String(req.query.state || ''));
+    if (!st || st.purpose !== 'gmail' || !st.email) { res.status(400).send('That link has expired. Start again from the app.'); return; }
+    if (req.query.error) { back('denied'); return; }
+    const x = await gmailCore.exchangeCode({
+      code: String(req.query.code || ''), clientId: GOOGLE_CLIENT_ID.value(), clientSecret: GOOGLE_CLIENT_SECRET.value(),
+      redirectUri: NCH_GMAIL_CALLBACK_URL.value(), fetchFn: fetch,
+    });
+    if (!x.ok) { back(x.reason === 'invalid_grant' ? 'retry' : 'failed'); return; }
+    await gmailDoc(st.email).set({
+      email: st.email,
+      refreshTokenBlob: gmailCore.encryptToken(x.refreshToken, GMAIL_TOKEN_KEY.value()),
+      status: 'ok',
+      connectedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    back('connected');
+  }
+);
+
+// Disconnect: revoke at Google, delete the token and every Gmail-derived job.
+exports.nchGmailDisconnect = onRequest(
+  { region: REGION, invoker: 'public', secrets: GMAIL_SECRETS },
+  async (req, res) => {
+    if (nchCors(req, res)) return;
+    if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
+    const email = nchEmailFrom(req);
+    if (!email) { res.status(401).json({ error: 'Sign in again.' }); return; }
+    const ref = gmailDoc(email);
+    const snap = await ref.get();
+    if (snap.exists && snap.data().refreshTokenBlob) {
+      try {
+        await gmailCore.revokeToken(gmailCore.decryptToken(snap.data().refreshTokenBlob, GMAIL_TOKEN_KEY.value()), fetch);
+      } catch (e) { /* still delete locally */ }
+    }
+    await ref.delete();
+    res.json({ ok: true });
+  }
+);
+
+// Weekly (Mon 03:17 Perth): every connected account, read its mail, keep its own rows. Errors are per account.
+exports.nchGmailScan = onSchedule(
+  { schedule: '17 3 * * 1', timeZone: 'Australia/Perth', region: REGION, secrets: GMAIL_SECRETS, timeoutSeconds: 540, memory: '512MiB' },
+  async () => {
+    const db = getFirestore();
+    const accounts = await db.collection('nchGmail').get();
+    for (const doc of accounts.docs) {
+      const email = doc.id;
+      const data = doc.data();
+      if (!data.refreshTokenBlob) continue;
+      try {
+        const userSnap = await db.collection('nchUsers').doc(email).get();
+        const name = nchNameFrom(userSnap.exists ? userSnap.data() : {});
+        const r = await gmailCore.scanAccount(
+          { refreshTokenBlob: data.refreshTokenBlob, name, processedIds: data.processedIds || [], jobs: data.jobs || [] },
+          { fetchFn: fetch, clientId: GOOGLE_CLIENT_ID.value(), clientSecret: GOOGLE_CLIENT_SECRET.value(),
+            tokenKeySecret: GMAIL_TOKEN_KEY.value(), query: NCH_GMAIL_QUERY.value() }
+        );
+        await doc.ref.set({
+          status: r.status,
+          lastRunAt: FieldValue.serverTimestamp(),
+          lastError: r.lastError || FieldValue.delete(),
+          processedIds: r.processedIds,
+          jobs: r.jobs,
+        }, { merge: true });
+      } catch (e) {
+        // Log the error type only: never message text or emails.
+        console.error('nchGmailScan: one account failed', String(e && e.message || e).slice(0, 120));
+        await doc.ref.set({ status: 'error', lastRunAt: FieldValue.serverTimestamp(), lastError: 'scan failed' }, { merge: true });
+      }
+    }
   }
 );
