@@ -969,9 +969,9 @@ exports.nchGmailDisconnect = onRequest(
   }
 );
 
-// Weekly (Mon 03:17 Perth): every connected account, read its mail, keep its own rows. Errors are per account.
+// Weekly (Sun 03:17 Perth, before timesheets are done): every connected account, read its mail, keep its own rows. Errors are per account.
 exports.nchGmailScan = onSchedule(
-  { schedule: '17 3 * * 1', timeZone: 'Australia/Perth', region: REGION, secrets: GMAIL_SECRETS, timeoutSeconds: 540, memory: '512MiB' },
+  { schedule: '17 3 * * 0', timeZone: 'Australia/Perth', region: REGION, secrets: GMAIL_SECRETS, timeoutSeconds: 540, memory: '512MiB' },
   async () => {
     const db = getFirestore();
     const accounts = await db.collection('nchGmail').get();
