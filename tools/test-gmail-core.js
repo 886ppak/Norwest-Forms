@@ -95,7 +95,7 @@ const b64 = s => Buffer.from(s, 'utf8').toString('base64url');
   await ok('removed job stays out, even if the scan finds it again', async () => {
     const a = { vd: '1', mob: '2026-08-01', first: '2026-08-02', last: '2026-08-03', shift: 'DS', cls: 'X' };
     const b = { vd: '2', mob: '2026-08-05', first: '2026-08-06', last: '2026-08-07', shift: 'NS', cls: 'Y' };
-    const key = core.jobKey(a);
+    const key = core.jobIdentity(a);
     const kept = core.withoutDismissed(core.mergeJobs([], [a, b]), [key]);
     assert.strictEqual(kept.length, 1);
     assert.strictEqual(kept[0].vd, '2');
@@ -108,7 +108,11 @@ const b64 = s => Buffer.from(s, 'utf8').toString('base64url');
     };
     const r = await core.scanAccount({ refreshTokenBlob: core.encryptToken('rt', SECRET), name: 'Aiden Amur', processedIds: [], jobs: [], dismissed: [key] },
       { fetchFn, clientId: 'c', clientSecret: 's', tokenKeySecret: SECRET, query: 'q' });
-    assert.ok(!r.jobs.some(j => core.jobKey(j) === key), 'cancelled job came back');
+    assert.ok(!r.jobs.some(j => core.jobIdentity(j) === key), 'cancelled job came back');
+    // a corrected version of the same job (same VD and MOB, other dates) replaces the old copy
+    const corrected = core.mergeJobs([a], [{ ...a, last: '2026-08-05', cls: '' }]);
+    assert.strictEqual(corrected.length, 1);
+    assert.strictEqual(corrected[0].last, '2026-08-05');
   });
 
   await ok('processed-id memory is capped', async () => {

@@ -4156,12 +4156,14 @@ function calUpsert(job){
 // act on this phone's own jobs (index-based), so they are never written into norwestCalJobs.
 const GMAIL_SUMMARY_KEY = 'norwestGmailSummary';
 function gmailLoad(){ try{ return JSON.parse(localStorage.getItem(GMAIL_SUMMARY_KEY)||'null'); }catch(e){ return null; } }
+// Same job = same VD number and MOB date (falls back to the full key when there is no VD).
+function calJobIdentity(j){ return j.vd ? j.vd+'|'+j.mob : calJobKey(j); }
 function calLoadAll(){
   const local = calLoad();
   const g = gmailLoad();
   if(!g || !g.connected || !Array.isArray(g.jobs) || !g.jobs.length) return local;
-  const seen = new Set(local.map(calJobKey));
-  return local.concat(g.jobs.filter(j => !seen.has(calJobKey(j)))
+  const seen = new Set(local.map(calJobIdentity));
+  return local.concat(g.jobs.filter(j => !seen.has(calJobIdentity(j)))
     .map(j => Object.assign({}, j, {shift: calShiftBase(j.shift), fromGmail: true})));
 }
 const GMAIL_BETA_EMAILS = ['myslewer@gmail.com', 'aiden.tunupopo@gmail.com'];   // owner only for now; keep in step with GMAIL_ALLOWED in functions/index.js
@@ -4206,7 +4208,7 @@ async function gmailRemoveJob(key){
     const r = await fetch(NCH_API + '/nchGmailDismiss', {method:'POST', headers:{'Content-Type':'application/json', Authorization:'Bearer ' + s.token}, body: JSON.stringify({key})});
     if(!r.ok){ const j = await r.json().catch(()=>({})); showToast(j.error || 'Could not remove the job. Try again.'); return; }
     const g = gmailLoad();
-    if(g && Array.isArray(g.jobs)) { g.jobs = g.jobs.filter(j => calJobKey(j) !== key); localStorage.setItem(GMAIL_SUMMARY_KEY, JSON.stringify(g)); }
+    if(g && Array.isArray(g.jobs)) { g.jobs = g.jobs.filter(j => calJobIdentity(j) !== key); localStorage.setItem(GMAIL_SUMMARY_KEY, JSON.stringify(g)); }
     showToast('Job removed.');
     calRefresh(); profileRenderAccount();
   }catch(e){ showToast('Could not reach the server. Try again shortly.'); }
@@ -4416,9 +4418,9 @@ function calRender(){
 function calRenderList(){
   const jobs=calLoad(), el=document.getElementById('calJobs');
   // Gmail jobs that this phone does not already have, shown view-only below its own jobs
-  const seen = new Set(jobs.map(calJobKey));
+  const seen = new Set(jobs.map(calJobIdentity));
   const g = gmailLoad();
-  const gjobs = (g && g.connected && Array.isArray(g.jobs)) ? g.jobs.filter(j => !seen.has(calJobKey(j))) : [];
+  const gjobs = (g && g.connected && Array.isArray(g.jobs)) ? g.jobs.filter(j => !seen.has(calJobIdentity(j))) : [];
   if(!jobs.length && !gjobs.length){ el.innerHTML='<div style="font-size:13px;color:var(--muted)">No jobs saved yet.</div>'; return; }
   const card = (j, i, fromGmail) => {
     const days = calDayDiff(j.mob, j.demob)+1;
@@ -4432,7 +4434,7 @@ function calRenderList(){
       ${j.travelIn||j.travelOut?`<div style="margin-top:4px">Travel in: ${calEsc(j.travelIn||'-')} · out: ${calEsc(j.travelOut||'-')}</div>`:''}
       ${j.sd && (j.sd.date||j.sd.text)?`<div style="margin-top:4px">SD/FD: ${calEsc(calFmt(j.sd.date))} ${calEsc(j.sd.text||'')}</div>`:''}
       ${j.accom?`<div style="margin-top:4px">Accommodation: ${calEsc(j.accom)}</div>`:''}
-      ${fromGmail?`<button class="calDel" onclick="gmailRemoveJob(${JSON.stringify(calJobKey(j)).replace(/"/g,'&quot;')})">Remove this job</button>`:`<button class="calDel" onclick="calDelete(${i})">Delete this job</button>`}
+      ${fromGmail?`<button class="calDel" onclick="gmailRemoveJob(${JSON.stringify(calJobIdentity(j)).replace(/"/g,'&quot;')})">Remove this job</button>`:`<button class="calDel" onclick="calDelete(${i})">Delete this job</button>`}
     </div>`;
   };
   el.innerHTML = jobs.map((j,i)=>card(j,i,false)).join('') + gjobs.map(j=>card(j,-1,true)).join('');

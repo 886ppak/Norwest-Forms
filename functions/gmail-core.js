@@ -133,18 +133,20 @@ function scanMessages(messages, name) {
 
 // Same identity as the PWA's calJobKey, so a job found twice is one job.
 function jobKey(j) { return [j.vd, j.mob, j.first, j.last, j.shift, j.cls].join('|'); }
+// What makes two jobs 'the same job': VD number and MOB date. If a job has no VD, the full key is used.
+function jobIdentity(j) { return j.vd ? [j.vd, j.mob].join('|') : jobKey(j); }
 
 // Existing jobs + new jobs: new wins for the same key. Returns a new array sorted by MOB date.
 // Jobs the person removed on purpose. They stay out of the list even when the email is read again.
 function withoutDismissed(jobs, dismissedKeys) {
   const gone = new Set(dismissedKeys || []);
-  return (jobs || []).filter(j => !gone.has(jobKey(j)));
+  return (jobs || []).filter(j => !gone.has(jobIdentity(j)));
 }
 
 function mergeJobs(existing, incoming) {
   const map = new Map();
-  for (const j of existing || []) map.set(jobKey(j), j);
-  for (const j of incoming || []) map.set(jobKey(j), j);
+  for (const j of existing || []) map.set(jobIdentity(j), j);
+  for (const j of incoming || []) map.set(jobIdentity(j), j);
   return [...map.values()].sort((a, b) => String(a.mob || '').localeCompare(String(b.mob || '')));
 }
 
@@ -192,5 +194,5 @@ module.exports = {
   GMAIL_SCOPE, MAX_PROCESSED,
   encryptToken, decryptToken,
   buildAuthUrl, exchangeCode, accessTokenFor, revokeToken,
-  plainTextOf, headerOf, scanMessages, jobKey, mergeJobs, withoutDismissed, scanAccount,
+  plainTextOf, headerOf, scanMessages, jobKey, jobIdentity, mergeJobs, withoutDismissed, scanAccount,
 };

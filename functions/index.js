@@ -943,7 +943,7 @@ exports.nchGmailDismiss = onRequest(
       const snap = await tx.get(ref);
       const data = snap.exists ? snap.data() : {};
       const dismissed = Array.from(new Set([...(data.dismissed || []), key])).slice(-500);
-      const jobs = (data.jobs || []).filter(j => gmailCore.jobKey(j) !== key);
+      const jobs = (data.jobs || []).filter(j => gmailCore.jobIdentity(j) !== key);
       tx.set(ref, { dismissed, jobs }, { merge: true });
     });
     res.json({ ok: true });
