@@ -92,6 +92,25 @@ const b64 = s => Buffer.from(s, 'utf8').toString('base64url');
     assert.strictEqual(m[1].site, 'new');
   });
 
+  await ok('removed job stays out, even if the scan finds it again', async () => {
+    const a = { vd: '1', mob: '2026-08-01', first: '2026-08-02', last: '2026-08-03', shift: 'DS', cls: 'X' };
+    const b = { vd: '2', mob: '2026-08-05', first: '2026-08-06', last: '2026-08-07', shift: 'NS', cls: 'Y' };
+    const key = core.jobKey(a);
+    const kept = core.withoutDismissed(core.mergeJobs([], [a, b]), [key]);
+    assert.strictEqual(kept.length, 1);
+    assert.strictEqual(kept[0].vd, '2');
+    // a scan that finds the cancelled job again must not bring it back
+    const fetchFn = async (url) => {
+      if (url.includes('oauth2.googleapis.com/token')) return json(200, { access_token: 'AT' });
+      if (url.includes('/messages?')) return json(200, { messages: [{ id: 'new1' }] });
+      if (url.includes('/messages/new1')) return json(200, { id: 'new1', payload: { headers: [{ name: 'Subject', value: 'x' }], mimeType: 'text/plain', body: { data: b64(F.psa) } } });
+      throw new Error('unexpected ' + url);
+    };
+    const r = await core.scanAccount({ refreshTokenBlob: core.encryptToken('rt', SECRET), name: 'Aiden Amur', processedIds: [], jobs: [], dismissed: [key] },
+      { fetchFn, clientId: 'c', clientSecret: 's', tokenKeySecret: SECRET, query: 'q' });
+    assert.ok(!r.jobs.some(j => core.jobKey(j) === key), 'cancelled job came back');
+  });
+
   await ok('processed-id memory is capped', async () => {
     const many = Array.from({ length: 600 }, (_, i) => 'id' + i);
     const fetchFn = async (url) => {

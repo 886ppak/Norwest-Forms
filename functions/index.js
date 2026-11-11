@@ -927,6 +927,29 @@ exports.nchGmailCallback = onRequest(
 );
 
 // Disconnect: revoke at Google, delete the token and every Gmail-derived job.
+// Remove one imported job for good: stored as dismissed so the weekly scan never adds it back.
+exports.nchGmailDismiss = onRequest(
+  { region: REGION, invoker: 'public', secrets: GMAIL_SECRETS },
+  async (req, res) => {
+    if (nchCors(req, res)) return;
+    if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
+    const email = nchEmailFrom(req);
+    if (!email) { res.status(401).json({ error: 'Sign in again.' }); return; }
+    if (!GMAIL_ALLOWED.includes(email)) { res.status(403).json({ error: 'Gmail import is not open to your account yet.' }); return; }
+    const key = req.body && req.body.key;
+    if (typeof key !== 'string' || key.length < 3 || key.length > 300) { res.status(400).json({ error: 'Bad job key.' }); return; }
+    const ref = gmailDoc(email);
+    await getFirestore().runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const data = snap.exists ? snap.data() : {};
+      const dismissed = Array.from(new Set([...(data.dismissed || []), key])).slice(-500);
+      const jobs = (data.jobs || []).filter(j => gmailCore.jobKey(j) !== key);
+      tx.set(ref, { dismissed, jobs }, { merge: true });
+    });
+    res.json({ ok: true });
+  }
+);
+
 exports.nchGmailDisconnect = onRequest(
   { region: REGION, invoker: 'public', secrets: GMAIL_SECRETS },
   async (req, res) => {
@@ -960,7 +983,7 @@ exports.nchGmailScan = onSchedule(
         const userSnap = await db.collection('nchUsers').doc(email).get();
         const name = nchNameFrom(userSnap.exists ? userSnap.data() : {});
         const r = await gmailCore.scanAccount(
-          { refreshTokenBlob: data.refreshTokenBlob, name, processedIds: data.processedIds || [], jobs: data.jobs || [] },
+          { refreshTokenBlob: data.refreshTokenBlob, name, processedIds: data.processedIds || [], jobs: data.jobs || [], dismissed: data.dismissed || [] },
           { fetchFn: fetch, clientId: GOOGLE_CLIENT_ID.value(), clientSecret: GOOGLE_CLIENT_SECRET.value(),
             tokenKeySecret: GMAIL_TOKEN_KEY.value(), query: NCH_GMAIL_QUERY.value() }
         );

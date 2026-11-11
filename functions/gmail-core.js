@@ -135,6 +135,12 @@ function scanMessages(messages, name) {
 function jobKey(j) { return [j.vd, j.mob, j.first, j.last, j.shift, j.cls].join('|'); }
 
 // Existing jobs + new jobs: new wins for the same key. Returns a new array sorted by MOB date.
+// Jobs the person removed on purpose. They stay out of the list even when the email is read again.
+function withoutDismissed(jobs, dismissedKeys) {
+  const gone = new Set(dismissedKeys || []);
+  return (jobs || []).filter(j => !gone.has(jobKey(j)));
+}
+
 function mergeJobs(existing, incoming) {
   const map = new Map();
   for (const j of existing || []) map.set(jobKey(j), j);
@@ -175,7 +181,7 @@ async function scanAccount(state, deps) {
   const remembered = [...(state.processedIds || []), ...scan.processedIds].slice(-MAX_PROCESSED);
   return {
     status: 'ok',
-    jobs: mergeJobs(state.jobs, scan.jobs),
+    jobs: withoutDismissed(mergeJobs(state.jobs, scan.jobs), state.dismissed),
     processedIds: remembered,
     newJobs: scan.jobs.length,
     skipped: scan.skipped.length,
@@ -186,5 +192,5 @@ module.exports = {
   GMAIL_SCOPE, MAX_PROCESSED,
   encryptToken, decryptToken,
   buildAuthUrl, exchangeCode, accessTokenFor, revokeToken,
-  plainTextOf, headerOf, scanMessages, jobKey, mergeJobs, scanAccount,
+  plainTextOf, headerOf, scanMessages, jobKey, mergeJobs, withoutDismissed, scanAccount,
 };
