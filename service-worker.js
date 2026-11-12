@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norwest-timesheet-v137';
+const CACHE_NAME = 'norwest-timesheet-v139';
 const APP_SHELL = [
   './',
   './index.html',
@@ -18,9 +18,10 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => Promise.all(APP_SHELL.map(url =>
+        // one file that fails (e.g. a CDN hiccup) must not stop the whole update
         fetch(url, {cache:'reload'}).then(response => {
           if (response && response.status === 200) return cache.put(url, response);
-        })
+        }).catch(() => {})
       )))
       .then(() => self.skipWaiting())
   );
@@ -44,6 +45,8 @@ self.addEventListener('activate', event => {
 const isAdminUrl = url => new URL(url).pathname.endsWith('/admin.html');
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
+  // the app's own 'is there a newer version?' check: always the network, never cached
+  if (new URL(event.request.url).searchParams.has('nv')) return;
   if (isAdminUrl(event.request.url)) return;
   event.respondWith((async () => {
     const client = event.clientId && await self.clients.get(event.clientId);
