@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norwest-timesheet-v139';
+const CACHE_NAME = 'norwest-timesheet-v140';
 const APP_SHELL = [
   './',
   './index.html',
@@ -60,6 +60,19 @@ function appResponse(event) {
   // carry the shared email text, so they are never cached: serve the app shell.
   if (event.request.mode === 'navigate' && new URL(event.request.url).search) {
     return caches.match('./index.html').then(cached => cached || fetch(event.request));
+  }
+  // Opening the app: try the network first, so a new release is picked up on the next
+  // open without waiting for the service worker file to change. Offline: the cached copy.
+  if (event.request.mode === 'navigate') {
+    return fetch(event.request)
+      .then(response => {
+        if (response && response.status === 200) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put('./index.html', clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match('./index.html'));
   }
   return (
     caches.match(event.request).then(cached => {
