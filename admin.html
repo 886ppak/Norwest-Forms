@@ -142,6 +142,7 @@
         <div class="tile"><b id="uWeek">–</b><span>opens this week</span></div>
         <div class="tile"><b id="uPhones">–</b><span>phones</span></div>
         <div class="tile"><b id="uDownloads">–</b><span>PDF downloads this week (no submit)</span></div>
+        <div class="tile"><b id="uPeople">–</b><span>unique people (names, last 90 days)</span></div>
       </div>
       <div class="bars" id="usageBars"></div>
       <div class="legend" id="usageLegend"></div>
@@ -532,6 +533,13 @@ function render() {
         .sort((x, y) => Object.values(y[1]).reduce((s, n) => s + n, 0) - Object.values(x[1]).reduce((s, n) => s + n, 0))
         .map(([who, forms]) => who + ' (' + Object.entries(forms).map(([f, n]) => f + ' ×' + n).join(', ') + ')').join(' · ')
     : '';
+  // One person counted once, however many forms or downloads: names matched with nameKey (spelling variants).
+  const dlNames = new Set(usage.filter(r => r.kind === 'download').map(r => nameKey(r.name)).filter(Boolean));
+  const subNames = new Set(subs.map(r => nameKey(r.name)).filter(Boolean));
+  const everyone = new Set([...dlNames, ...subNames]);
+  const downloadOnly = [...dlNames].filter(k => !subNames.has(k)).length;
+  $('uPeople').textContent = everyone.size;
+  $('uDlPeople').textContent += (dlNames.size ? ' · ' + dlNames.size + ' people downloaded, ' + downloadOnly + ' of them never submitted anything (90 days).' : '');
 
   const maxOpen = Math.max(1, ...Object.values(opensByDay));
   $('usageBars').innerHTML = days14.map(d => {
