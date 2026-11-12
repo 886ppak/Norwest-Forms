@@ -387,13 +387,18 @@ function monthlyTotals(subRows, evRows) {
     if (r.name) personDays[r.name.toLowerCase()] = (personDays[r.name.toLowerCase()] || 0) + 1;
     if (r.late) late += 1;
   });
-  const openDays = {}, impDays = {}, devices = new Set(), impDevices = new Set();
-  let opens = 0, imports = 0, jobs = 0, viaShare = 0;
+  const openDays = {}, impDays = {}, devices = new Set(), impDevices = new Set(), dlDevices = new Set();
+  let opens = 0, imports = 0, jobs = 0, viaShare = 0, downloads = 0;
+  const dlForms = {};
   evRows.forEach(r => {
     const day = r.perthTime.slice(0, 10);
     if (r.kind === 'open') {
       opens += 1; openDays[day] = (openDays[day] || 0) + 1;
       if (r.device) devices.add(r.device);
+    } else if (r.kind === 'download') {
+      // a PDF saved without submitting: counted separately from sent forms
+      downloads += 1; if (r.device) dlDevices.add(r.device);
+      dlForms[r.formType || '?'] = (dlForms[r.formType || '?'] || 0) + 1;
     } else if (r.kind === 'calimport') {
       imports += 1; impDays[day] = (impDays[day] || 0) + 1;
       jobs += Number(r.jobs) || 0;
@@ -408,6 +413,9 @@ function monthlyTotals(subRows, evRows) {
   Object.entries(companyCount).sort().forEach(([k, n]) => rows.push(['submission_company', k, n]));
   rows.push(['app_opens', '', opens]);
   rows.push(['app_devices', '', devices.size]);
+  rows.push(['pdf_downloads', '', downloads]);
+  rows.push(['pdf_download_devices', '', dlDevices.size]);
+  Object.entries(dlForms).sort().forEach(([k, n]) => rows.push(['pdf_download_form', k, n]));
   rows.push(['cal_imports', '', imports]);
   rows.push(['cal_import_devices', '', impDevices.size]);
   rows.push(['cal_import_jobs', '', jobs]);

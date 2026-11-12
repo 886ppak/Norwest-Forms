@@ -141,6 +141,7 @@
         <div class="tile"><b id="uToday">–</b><span>opens today</span></div>
         <div class="tile"><b id="uWeek">–</b><span>opens this week</span></div>
         <div class="tile"><b id="uPhones">–</b><span>phones</span></div>
+        <div class="tile"><b id="uDownloads">–</b><span>PDF downloads this week (no submit)</span></div>
       </div>
       <div class="bars" id="usageBars"></div>
       <div class="legend" id="usageLegend"></div>
@@ -516,6 +517,8 @@ function render() {
   $('uToday').textContent = opensByDay[todayISO] || 0;
   $('uWeek').textContent = opens.filter(r => dayOf(r.when) > weekAgo).length;
   $('uPhones').textContent = new Set(opens.filter(r => dayOf(r.when) > weekAgo && r.device).map(r => r.device)).size;
+  const downloads = usage.filter(r => r.kind === 'download' && dayOf(r.when) > weekAgo);
+  $('uDownloads').textContent = downloads.length;
 
   const maxOpen = Math.max(1, ...Object.values(opensByDay));
   $('usageBars').innerHTML = days14.map(d => {
