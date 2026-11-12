@@ -467,6 +467,7 @@ async function archiveUsageDaily() {
     if (!evRows[key]) return;
     evRows[key].push({
       at, perthTime: perthParts(at).iso.slice(0, 16).replace('T', ' '),
+      formType: r.formType || '', name: r.name || '',
       kind: r.kind || '', device: r.device || '', appVersion: r.appVersion || '',
       installed: r.inst ? 'yes' : 'no', via: r.via || '',
       jobs: r.jobs == null ? '' : r.jobs, company: r.company || '',
@@ -501,8 +502,8 @@ async function archiveUsageDaily() {
     }
     if (evRows[key].length) {
       evRows[key].sort((a, b) => a.at - b.at);
-      const header = ['perth_time', 'kind', 'device', 'app_version', 'installed', 'via', 'jobs', 'company'];
-      const lines = evRows[key].map(r => [r.perthTime, r.kind, r.device, r.appVersion, r.installed, r.via, r.jobs, r.company].map(csvCell).join(','));
+      const header = ['perth_time', 'kind', 'device', 'app_version', 'installed', 'via', 'jobs', 'company', 'form', 'name'];
+      const lines = evRows[key].map(r => [r.perthTime, r.kind, r.device, r.appVersion, r.installed, r.via, r.jobs, r.company, r.formType, r.name].map(csvCell).join(','));
       await writeDetail(`logs-usage-${key}.csv`, header, lines);
     }
     // Permanent monthly totals, rewritten from whatever detail is still in

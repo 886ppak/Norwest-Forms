@@ -145,6 +145,7 @@
       </div>
       <div class="bars" id="usageBars"></div>
       <div class="legend" id="usageLegend"></div>
+      <div class="legend" id="uDlPeople"></div>
       <div class="split" id="usageSplit"></div>
     </div>
 
@@ -519,6 +520,18 @@ function render() {
   $('uPhones').textContent = new Set(opens.filter(r => dayOf(r.when) > weekAgo && r.device).map(r => r.device)).size;
   const downloads = usage.filter(r => r.kind === 'download' && dayOf(r.when) > weekAgo);
   $('uDownloads').textContent = downloads.length;
+  const byPerson = {};
+  downloads.forEach(r => {
+    const who = (r.name || 'unnamed').trim();
+    byPerson[who] = byPerson[who] || {};
+    const f = r.formType || '?';
+    byPerson[who][f] = (byPerson[who][f] || 0) + 1;
+  });
+  $('uDlPeople').textContent = downloads.length
+    ? 'Downloads this week (no submit): ' + Object.entries(byPerson)
+        .sort((x, y) => Object.values(y[1]).reduce((s, n) => s + n, 0) - Object.values(x[1]).reduce((s, n) => s + n, 0))
+        .map(([who, forms]) => who + ' (' + Object.entries(forms).map(([f, n]) => f + ' ×' + n).join(', ') + ')').join(' · ')
+    : '';
 
   const maxOpen = Math.max(1, ...Object.values(opensByDay));
   $('usageBars').innerHTML = days14.map(d => {
