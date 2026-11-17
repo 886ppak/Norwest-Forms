@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norwest-timesheet-v151';
+const CACHE_NAME = 'norwest-timesheet-v152';
 const APP_SHELL = [
   './',
   './index.html',
@@ -45,6 +45,8 @@ self.addEventListener('activate', event => {
 const isAdminUrl = url => new URL(url).pathname.endsWith('/admin.html');
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
+  // Job-share server calls (Cloud Functions) always go to the network and are never cached.
+  if (event.request.url.includes('cloudfunctions.net')) return;
   // the app's own 'is there a newer version?' check: always the network, never cached
   if (new URL(event.request.url).searchParams.has('nv')) return;
   if (isAdminUrl(event.request.url)) return;
