@@ -560,6 +560,13 @@ function render() {
     ? `<span class="pill ok">${installed} installed app</span><span class="pill">${opens.length - installed} in browser</span>`
       + `<span class="pill">${allPhones} phone${allPhones === 1 ? '' : 's'} seen</span>`
     : '';
+  // New-feature walkthrough (from v1.96 on): unique phones that opened it, and that turned alerts on.
+  const walkRows = usage.filter(r => r.kind === 'walk');
+  const walkSeen = new Set(walkRows.filter(r => r.outcome === 'open').map(r => r.device).filter(Boolean)).size;
+  const walkOn = new Set(walkRows.filter(r => r.outcome === 'alerts-on').map(r => r.device).filter(Boolean)).size;
+  $('usageSplit').innerHTML += walkRows.length
+    ? `<span class="pill ok">${walkSeen} phone${walkSeen === 1 ? '' : 's'} saw the walkthrough</span><span class="pill ok">${walkOn} turned alerts on</span>`
+    : '<span class="pill">Walkthrough: no views logged yet</span>';
 
   const viaShare = imports.filter(r => r.via === 'share').length;
   const viaPaste = imports.filter(r => r.via === 'paste').length;

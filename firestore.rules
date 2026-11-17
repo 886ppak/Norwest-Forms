@@ -99,9 +99,9 @@ service cloud.firestore {
     // is a random value the phone makes for itself, never tied to a person.
     // Kept 90 days in Firestore, archived to Nextcloud well before that.
     match /usageEvents/{eventId} {
-      allow create: if request.resource.data.keys().hasOnly(['kind', 'at', 'expireAt', 'device', 'appVersion', 'inst', 'via', 'jobs', 'company'])
+      allow create: if request.resource.data.keys().hasOnly(['kind', 'at', 'expireAt', 'device', 'appVersion', 'inst', 'via', 'jobs', 'company', 'outcome'])
                      && request.resource.data.kind is string
-                     && request.resource.data.kind in ['open', 'calimport']
+                     && request.resource.data.kind in ['open', 'calimport', 'walk']
                      && request.resource.data.at is timestamp
                      && request.resource.data.expireAt is timestamp
                      && request.resource.data.expireAt > request.resource.data.at
@@ -113,7 +113,9 @@ service cloud.firestore {
                      // calendar-import records may carry how it arrived and how many jobs
                      && (!('via' in request.resource.data) || request.resource.data.via in ['share', 'paste'])
                      && (!('jobs' in request.resource.data) || (request.resource.data.jobs is int && request.resource.data.jobs >= 0 && request.resource.data.jobs <= 50))
-                     && (!('company' in request.resource.data) || (request.resource.data.company is string && request.resource.data.company.size() <= 10));
+                     && (!('company' in request.resource.data) || (request.resource.data.company is string && request.resource.data.company.size() <= 10))
+                     // walkthrough records: what happened on the new-feature walkthrough (no names)
+                     && (!('outcome' in request.resource.data) || request.resource.data.outcome in ['open', 'alerts-on', 'alerts-off', 'closed']);
       allow get, list: if isAdmin();
       allow update, delete: if false;
     }
