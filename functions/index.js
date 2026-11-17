@@ -1155,7 +1155,8 @@ exports.nchOffersGet = onRequest(
       Object.assign({ id: d.id }, rest, { cutoffMs });
     const offers = pendingSnap.docs.map(d => clean(d.data(), d)).filter(o => o.cutoffMs > now);
     // Accepted from a notification but not yet put on the phone's calendar.
-    const added = acceptedSnap.docs.filter(d => !d.data().calendarAt).map(d => clean(d.data(), d));
+    // Only while the job's submission cut-off has not passed: a lapsed job is never sent to a phone.
+    const added = acceptedSnap.docs.filter(d => !d.data().calendarAt && d.data().cutoffMs > now).map(d => clean(d.data(), d));
     res.json({ offers, accepted: added });
   }
 );
