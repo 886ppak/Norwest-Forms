@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norwest-timesheet-v146';
+const CACHE_NAME = 'norwest-timesheet-v147';
 const APP_SHELL = [
   './',
   './index.html',
@@ -102,11 +102,28 @@ self.addEventListener('push', event => {
     tag: 'job-offers-' + (data.offerId || 'x'),
     renotify: false,
     icon: 'icons/icon-192.png',
+    requireInteraction: true,
     actions: [{ action: 'accept', title: 'Accept' }],
-    data: { url: data.url || './?offers=1', offerId: data.offerId || '', installId: data.installId || '' }
+    data: { url: data.url || './?offers=1', offerId: data.offerId || '', installId: data.installId || '', title, body: options_body(data) }
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
+function options_body(data){ return data.body || "Tap to see and accept the job numbers."; }
+// After a tap on the alert body the platform removes it. If the job is still waiting, show it again.
+function swShowAgainIfPending(d){
+  return fetch(NCH_API_SW + '/nchOffersGet?installId=' + encodeURIComponent(d.installId))
+    .then(r => r.ok ? r.json() : null)
+    .then(j => {
+      if(!j || !(j.offers || []).some(o => o.id === d.offerId)) return;
+      return self.registration.showNotification(d.title || 'Job numbers offered to you', {
+        body: d.body || 'Tap to see and accept the job numbers.', tag: 'job-offers-' + d.offerId,
+        icon: 'icons/icon-192.png', requireInteraction: true,
+        actions: [{ action: 'accept', title: 'Accept' }],
+        data: d
+      });
+    })
+    .catch(() => {});
+}
 function swSay(title, body){
   return self.registration.showNotification(title, { body, tag: 'job-offers-result', icon: 'icons/icon-192.png', data: { url: './?offers=1' } });
 }
@@ -134,6 +151,6 @@ self.addEventListener('notificationclick', event => {
         if (c.url.startsWith(self.registration.scope) && 'focus' in c) return c.focus();
       }
       return self.clients.openWindow(target);
-    })
+    }).then(() => (d.offerId && d.installId) ? swShowAgainIfPending(d) : undefined)
   );
 });
