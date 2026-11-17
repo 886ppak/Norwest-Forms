@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norwest-timesheet-v149';
+const CACHE_NAME = 'norwest-timesheet-v150';
 const APP_SHELL = [
   './',
   './index.html',
@@ -59,6 +59,11 @@ function appResponse(event) {
   // A share into the app arrives as ./index.html?title=...&text=... Those URLs
   // carry the shared email text, so they are never cached: serve the app shell.
   if (event.request.mode === 'navigate' && new URL(event.request.url).search) {
+    // Job alerts open ./?offer=ID or ./?offers=1: fetch the current page (fall back to the saved copy).
+    const sp = new URL(event.request.url).searchParams;
+    if (sp.has('offer') || sp.has('offers')) {
+      return fetch(event.request).then(r => (r && r.status === 200) ? r : caches.match('./index.html')).catch(() => caches.match('./index.html'));
+    }
     return caches.match('./index.html').then(cached => cached || fetch(event.request));
   }
   // Opening the app: try the network first, so a new release is picked up on the next
