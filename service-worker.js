@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norwest-timesheet-v145';
+const CACHE_NAME = 'norwest-timesheet-v146';
 const APP_SHELL = [
   './',
   './index.html',
@@ -127,7 +127,7 @@ self.addEventListener('notificationclick', event => {
     );
     return;
   }
-  const target = new URL(d.url || './', self.location.origin + self.registration.scope).href;
+  const target = new URL(d.url || './', self.registration.scope).href;
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
       for (const c of list) {
