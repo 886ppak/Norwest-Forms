@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norwest-timesheet-v150';
+const CACHE_NAME = 'norwest-timesheet-v151';
 const APP_SHELL = [
   './',
   './index.html',
@@ -142,7 +142,7 @@ self.addEventListener('notificationclick', event => {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ installId: d.installId, offerId: d.offerId, action: 'accept' })
       }).then(r => {
-        if (r.ok) return swSay('Job accepted', 'It goes on your calendar when you open Norwest Forms.');
+        if (r.ok) return undefined;   // accepted: no second notification; the job goes on the calendar when the app next opens
         if (r.status === 410) return swSay('Too late', 'That job is past its submission cut-off.');
         return swSay('Not accepted', 'Something went wrong. Open Norwest Forms and try again.');
       }).catch(() => swSay('Not accepted', 'No connection. Open Norwest Forms and try again.'))
