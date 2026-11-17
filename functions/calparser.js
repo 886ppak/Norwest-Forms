@@ -120,5 +120,28 @@ function calParseEmailFuzzy(text, name, subject){
   if(!jobs.length) return {error:'No job rows match this name.'};
   return {jobs};
 }
+
+// Every job row in the text, for the pool (v1.101): any cell that looks like a person's name and
+// has a travel/shift/date pattern beside it. Returns an array (possibly empty); never throws.
+function calNameLike(c){
+  const t = String(c||'').trim();
+  if(!/^[A-Za-z][A-Za-z'’.\- ]{2,60}$/.test(t)) return false;
+  const words = t.split(/\s+/).length;
+  if(words < 2 || words > 4) return false;
+  if(CAL_SHIFT_RE.test(t) || CAL_TRAVEL_RE.test(t) || /\b(operator|rigger|supervisor|tba|regards|please|crew|class|shift|demob|mobe|full name|travel in|travel out|first shift|last shift|rh card|accommodation|commute|site)\b/i.test(t)) return false;
+  return true;
+}
+function calParseAllRows(text, subject){
+  const cells = calCells(text);
+  const jobs = [];
+  cells.forEach((c,n)=>{
+    if(!calNameLike(c)) return;
+    const j = calParseRow(cells, n);
+    if(!j.hasTravel || !j.shift || !j.demob) return;
+    j.site = j.site || subject || '';
+    jobs.push(Object.assign(j, {crewName: String(c).trim().slice(0,80)}));
+  });
+  return jobs;
+}
 // ===== end parser =====
-module.exports = { calParseEmail, calParseEmailFuzzy, calParseRow, calIsoOf, calCells, calShiftBase };
+module.exports = { calParseEmail, calParseEmailFuzzy, calParseAllRows, calParseRow, calIsoOf, calCells, calShiftBase };

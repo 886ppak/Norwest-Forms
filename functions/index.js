@@ -1023,10 +1023,40 @@ const webpush = require('web-push');
 const VAPID_PRIVATE = defineSecret('VAPID_PRIVATE_KEY');
 const VAPID_PUBLIC = 'BOfgnMupq0feSrZ-O2ZSKQHv0tgX-tADp_u3alXyCMMAll8FhKkJEtf1ndLqqM_mXLt8AJ1jkSVU6G5uL3x5m3I';
 const VAPID_SUBJECT = 'https://886ppak.github.io/Norwest-Forms/';
-const { calParseEmailFuzzy: parseEmailFuzzy } = require('./calparser.js');
+const { calParseEmailFuzzy: parseEmailFuzzy, calParseAllRows } = require('./calparser.js');
 
 function shareId(v) { return typeof v === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(v) ? v : null; }
 function shareName(v) { return String(v == null ? '' : v).trim().slice(0, 80); }
+
+// Offers a phone that registers late: any job row still in the pool (kept 14 days after demob)
+// whose crew name matches this phone's name gets a pending offer, same as a live share would make.
+async function backfillPool(db, installId, name, now) {
+  const { nameScore, classify } = require('./name-match.js');
+  const snap = await db.collection('sharedPool').where('expireAt', '>', Timestamp.fromMillis(now)).get();
+  let added = 0;
+  for (const doc of snap.docs) {
+    const r = doc.data();
+    const kind = classify(nameScore(name, r.crewName));
+    if (!kind || !r.demob || !shareCore.isOfferable({ endDate: r.demob }, now)) continue;
+    const oid = shareCore.offerId(r.jobNumber, installId);
+    const ref = db.collection('sharedJobs').doc(oid);
+    const wrote = await db.runTransaction(async (tx) => {
+      const cur = await tx.get(ref);
+      if (cur.exists) return false;          // already offered, accepted or dismissed
+      tx.set(ref, {
+        jobNumber: r.jobNumber, vd: r.vd || '', site: r.site || '', cls: r.cls || '', shift: r.shift || '',
+        mob: r.mob, first: r.first || '', last: r.last || '', demob: r.demob, sdDate: r.sdDate || '', sdText: r.sdText || '',
+        travelIn: r.travelIn || '', travelOut: r.travelOut || '', accom: r.accom || '',
+        matchKind: kind, matchedName: String(r.crewName || '').slice(0, 80), targetInstallId: installId, status: 'pending',
+        cutoffMs: shareCore.cutoffMs(r.demob), expireAt: Timestamp.fromMillis(shareCore.poolExpiryMs(r.demob)),
+        createdAt: FieldValue.serverTimestamp(), fromPool: true,
+      });
+      return true;
+    });
+    if (wrote) added++;
+  }
+  return added;
+}
 
 exports.nchDeviceTouch = onRequest(
   { region: REGION, invoker: 'public', maxInstances: 5 },
@@ -1036,8 +1066,18 @@ exports.nchDeviceTouch = onRequest(
     const id = shareId((req.body || {}).installId);
     const name = shareName((req.body || {}).name);
     if (!id || !name) { res.status(400).json({ error: 'Bad request' }); return; }
-    await getFirestore().collection('nchDevices').doc(id).set(
-      { name, lastOpenedMs: Date.now() }, { merge: true });
+    const db = getFirestore();
+    const ref = db.collection('nchDevices').doc(id);
+    const before = await ref.get();
+    const now = Date.now();
+    await ref.set({ name, lastOpenedMs: now }, { merge: true });
+    // New phone, or the name changed: check the pool for jobs shared before this phone registered (v1.101).
+    if (!before.exists || (before.data() || {}).poolName !== name) {
+      try {
+        await backfillPool(db, id, name, now);
+        await ref.set({ poolName: name }, { merge: true });
+      } catch (e) { console.error('backfill failed', e && e.message); }
+    }
     res.json({ ok: true });
   }
 );
@@ -1057,6 +1097,22 @@ exports.nchJobShare = onRequest(
     const now = Date.now();
     const db = getFirestore();
     await db.collection('nchDevices').doc(sharer).set({ name, lastOpenedMs: now }, { merge: true });
+
+    // Keep the job rows for 14 days after each job's demob, so people who register later still get them (v1.101).
+    // Only the parsed rows are kept, never the email. Crew names are kept with the rows; the owner can see them.
+    try {
+      for (const j of calParseAllRows(text, String(body.subject || '').slice(0, 200))) {
+        if (!j.demob || !shareCore.isOfferable({ endDate: j.demob }, now)) continue;
+        const jobNumber = j.vd || `${j.site || 'job'}-${j.mob}`;
+        const pid = require('crypto').createHash('sha1').update(`${j.crewName}|${jobNumber}|${j.mob}|${j.demob}`).digest('hex').slice(0, 32);
+        await db.collection('sharedPool').doc(pid).set({
+          crewName: j.crewName, jobNumber, vd: j.vd || '', site: j.site || '', cls: j.cls || '', shift: j.shift || '',
+          mob: j.mob, first: j.first || '', last: j.last || '', demob: j.demob, sdDate: j.sdDate || '', sdText: j.sdText || '',
+          travelIn: j.travelIn || '', travelOut: j.travelOut || '', accom: j.accom || '',
+          expireAt: Timestamp.fromMillis(shareCore.poolExpiryMs(j.demob)), addedAt: now,
+        }, { merge: true });
+      }
+    } catch (e) { console.error('pool write failed', e && e.message); }
 
     const devices = await db.collection('nchDevices').get();
     let offered = 0, suggested = 0;
@@ -1206,6 +1262,8 @@ exports.nchShareCleanup = onSchedule(
     const now = Date.now();
     const old = await db.collection('sharedJobs').where('expireAt', '<', Timestamp.fromMillis(now)).limit(500).get();
     for (const d of old.docs) await d.ref.delete();
+    const oldPool = await db.collection('sharedPool').where('expireAt', '<', Timestamp.fromMillis(now)).limit(500).get();
+    for (const d of oldPool.docs) await d.ref.delete();
     const devs = await db.collection('nchDevices').get();
     const stale = shareCore.staleDeviceIds(devs.docs.map(d => ({ id: d.id, lastOpenedMs: d.data().lastOpenedMs })), now);
     for (const id of stale) await db.collection('nchDevices').doc(id).delete();
