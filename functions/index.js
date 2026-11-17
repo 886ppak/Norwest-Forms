@@ -1089,7 +1089,7 @@ exports.nchJobShare = onRequest(
         if (!written) continue;
         if (j.matchKind === 'suggest') suggested++; else offered++;
         // Alert the phone if it has allowed alerts. The offer is already stored; a failed alert changes nothing.
-        if (d.data().push) await sendOfferAlert(d.id, d.data().push, jobNumber, oid);
+        if (d.data().push) await sendOfferAlert(d.id, d.data().push, jobNumber, oid, j.matchKind);
       }
     }
     res.json({ offered, suggested });
@@ -1097,14 +1097,16 @@ exports.nchJobShare = onRequest(
 );
 
 // Web Push alert for one new offer. Dead subscriptions (404/410) are removed.
-async function sendOfferAlert(installId, sub, jobNumber, offerId) {
+async function sendOfferAlert(installId, sub, jobNumber, offerId, kind) {
   try {
     webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE.value());
     await webpush.sendNotification(sub, JSON.stringify({
-      title: 'Job numbers offered to you',
-      body: 'Tap to see and accept job ' + jobNumber + '. Nothing is added until you accept.',
+      title: kind === 'suggest' ? 'Is this you? Job numbers offered' : 'Job numbers offered to you',
+      body: kind === 'suggest'
+        ? 'Check job ' + jobNumber + ' in the app before accepting.'
+        : 'Tap to see and accept job ' + jobNumber + '. Nothing is added until you accept.',
       url: './?offers=1',
-      offerId, installId,
+      offerId, installId, kind: kind || 'match',
     }), { TTL: 86400 });
   } catch (e) {
     const code = e && e.statusCode;

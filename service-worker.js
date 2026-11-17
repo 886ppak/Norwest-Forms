@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norwest-timesheet-v152';
+const CACHE_NAME = 'norwest-timesheet-v153';
 const APP_SHELL = [
   './',
   './index.html',
@@ -110,8 +110,9 @@ self.addEventListener('push', event => {
     renotify: false,
     icon: 'icons/icon-192.png',
     requireInteraction: true,
-    actions: [{ action: 'accept', title: 'Accept' }],
-    data: { url: data.url || './?offers=1', offerId: data.offerId || '', installId: data.installId || '', title, body: options_body(data) }
+    // A suggested job ('Is this you?') needs a visual check in the app, so no Accept button on the alert.
+    actions: data.kind === 'suggest' ? [] : [{ action: 'accept', title: 'Accept' }],
+    data: { url: data.url || './?offers=1', offerId: data.offerId || '', installId: data.installId || '', kind: data.kind || 'match', title, body: options_body(data) }
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
@@ -125,7 +126,7 @@ function swShowAgainIfPending(d){
       return self.registration.showNotification(d.title || 'Job numbers offered to you', {
         body: d.body || 'Tap to see and accept the job numbers.', tag: 'job-offers-' + d.offerId,
         icon: 'icons/icon-192.png', requireInteraction: true,
-        actions: [{ action: 'accept', title: 'Accept' }],
+        actions: d.kind === 'suggest' ? [] : [{ action: 'accept', title: 'Accept' }],
         data: d
       });
     })
@@ -137,7 +138,7 @@ function swSay(title, body){
 self.addEventListener('notificationclick', event => {
   const d = event.notification.data || {};
   event.notification.close();
-  if (event.action === 'accept' && d.offerId && d.installId) {
+  if (event.action === 'accept' && d.offerId && d.installId && d.kind !== 'suggest') {
     // Record the acceptance without opening the app. The app adds the job to the calendar when it next opens.
     event.waitUntil(
       fetch(NCH_API_SW + '/nchOfferAnswer', {
