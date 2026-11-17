@@ -1073,7 +1073,8 @@ exports.nchJobShare = onRequest(
           if (cur.exists && cur.data().status !== 'pending') return;
           tx.set(ref, {
             jobNumber, vd: j.vd || '', site: j.site || '', cls: j.cls || '', shift: j.shift || '',
-            mob: j.mob, demob: j.demob, sdDate: j.sdDate || '', sdText: j.sdText || '',
+            mob: j.mob, first: j.first || '', last: j.last || '', demob: j.demob, sdDate: j.sdDate || '', sdText: j.sdText || '',
+            travelIn: j.travelIn || '', travelOut: j.travelOut || '', accom: j.accom || '',
             matchKind: j.matchKind, targetInstallId: d.id, status: 'pending',
             cutoffMs: shareCore.cutoffMs(j.demob),
             expireAt: Timestamp.fromMillis(shareCore.poolExpiryMs(j.demob)),

@@ -630,6 +630,7 @@
       </div>
     </div>
 
+    <div class="card" id="offersCard" style="display:none"></div>
     <div class="card">
       <h2>Saved jobs</h2>
       <div id="calJobs"></div>
@@ -4311,6 +4312,7 @@ function calRead(subject, fromShare){
   const text = document.getElementById('calPaste').value;
   const pre = document.getElementById('calPreview');
   const out = calParseEmail(text, name, subject||'');
+  if(!out.error) shareSendEmail(text, subject||'');   // P2P: offer these jobs to other crew named on it
   if(out.error){
     calPending=null;
     const names = calFindNames(text);
@@ -4498,6 +4500,89 @@ function calSwipeInit(){
 function calRefresh(){
   if(!calRosterEditorReady) calRosterRenderEditor();
   calRender(); calRenderList();
+  offersSync(false);
+}
+
+// ----- job sharing (P2P): offers from other crew, device-based (no login) -----
+// Accept is the only way a job reaches this phone's calendar. The server decides who is offered.
+const OFFER_KEY = 'norwestOffers', OFFER_SYNC_KEY = 'norwestOffersSyncedAt', INSTALL_KEY = 'norwestInstallId';
+function installId(){
+  try{
+    let id = localStorage.getItem(INSTALL_KEY);
+    if(!id || !/^[A-Za-z0-9_-]{16,64}$/.test(id)){ id = nchRandom(16); localStorage.setItem(INSTALL_KEY, id); }
+    return id;
+  }catch(e){ return null; }
+}
+function offersLoad(){ try{ return JSON.parse(localStorage.getItem(OFFER_KEY) || '[]'); }catch(e){ return []; } }
+function offersSave(list){ try{ localStorage.setItem(OFFER_KEY, JSON.stringify(list)); }catch(e){} }
+// Tell the server this phone exists and its name, then fetch its pending offers. Throttled to 10 min.
+async function offersSync(force){
+  const id = installId(), name = calName();
+  if(!id || !name){ offersRender(); return; }
+  const last = +(localStorage.getItem(OFFER_SYNC_KEY) || 0);
+  if(!force && Date.now() - last < 10 * 60 * 1000){ offersRender(); return; }
+  try{
+    await fetch(NCH_API + '/nchDeviceTouch', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({installId: id, name})});
+    const r = await fetch(NCH_API + '/nchOffersGet?installId=' + encodeURIComponent(id));
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    offersSave(d.offers || []);
+    localStorage.setItem(OFFER_SYNC_KEY, String(Date.now()));
+  }catch(e){ /* offline: keep what we had */ }
+  offersRender();
+}
+function offersRender(){
+  const el = document.getElementById('offersCard');
+  if(!el) return;
+  const list = offersLoad().filter(o => o.cutoffMs > Date.now());
+  if(!list.length){ el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  el.innerHTML = '<h2>Job numbers offered to you</h2>'
+    + '<p style="font-size:12px; color:var(--muted)">Nothing is added to your calendar until you tap Accept.</p>'
+    + list.map(o => {
+        const label = o.vd ? 'Job ' + calEsc(o.vd) : calEsc(o.site || 'Job');
+        const dates = calFmt(o.mob) + (o.demob && o.demob !== o.mob ? ' to ' + calFmt(o.demob) : '');
+        const check = o.matchKind === 'suggest' ? '<div style="font-size:12px; color:#b8481c; font-weight:700">Is this you?</div>' : '';
+        return '<div class="offerRow" style="border-top:1px solid #e6e1d6; padding:10px 0">'
+          + '<div style="font-weight:700">' + label + '</div>'
+          + (o.site && o.vd ? '<div>' + calEsc(o.site) + '</div>' : '')
+          + '<div>' + calEsc(dates) + (o.shift ? ' · ' + calEsc(o.shift) : '') + '</div>'
+          + check
+          + '<div style="display:flex; gap:8px; margin-top:6px">'
+          + '<button class="calBtn" data-id="' + calEsc(o.id) + '" onclick="offerAnswer(this.dataset.id,\'accept\')">Accept</button>'
+          + '<button class="calBtn" style="background:none; color:var(--muted)" data-id="' + calEsc(o.id) + '" onclick="offerAnswer(this.dataset.id,\'dismiss\')">Dismiss</button>'
+          + '</div></div>';
+      }).join('');
+}
+async function offerAnswer(oid, action){
+  const id = installId();
+  const list = offersLoad();
+  const o = list.find(x => x.id === oid);
+  if(!id || !o) return;
+  try{
+    const r = await fetch(NCH_API + '/nchOfferAnswer', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({installId: id, offerId: oid, action})});
+    if(r.status === 410){ showToast('That job is past its submission cut-off.'); offersSave(list.filter(x => x.id !== oid)); offersRender(); return; }
+    if(!r.ok){ showToast('Could not save. Try again.'); return; }
+  }catch(e){ showToast('No connection. Try again when you are online.'); return; }
+  offersSave(list.filter(x => x.id !== oid));
+  if(action === 'accept'){
+    calAddJobs([{vd:o.vd, site:o.site, cls:o.cls, shift:o.shift, mob:o.mob, first:o.first || o.mob, last:o.last || o.demob,
+      demob:o.demob, sdDate:o.sdDate, sdText:o.sdText, travelIn:o.travelIn, travelOut:o.travelOut, accom:o.accom, warnings:[]}]);
+  } else {
+    showToast('Job dismissed.');
+  }
+  offersRender();
+}
+// Send the pasted or shared email to the server so other crew named on it get an offer.
+async function shareSendEmail(text, subject){
+  const id = installId(), name = calName();
+  if(!id || !name || !text) return;
+  try{
+    await fetch(NCH_API + '/nchJobShare', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({installId: id, name, emailText: String(text).slice(0, 300000), subject: String(subject || '').slice(0, 200)})});
+  }catch(e){ /* offline: the offer is not sent */ }
 }
 
 // ----- roster cycle and leave (v1.45) -----
