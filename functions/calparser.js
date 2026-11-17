@@ -115,7 +115,7 @@ function calParseEmailFuzzy(text, name, subject){
     const j = calParseRow(cells,n);
     if(!j.hasTravel || !j.shift) return;
     j.site = j.site || subject || '';
-    jobs.push(Object.assign(j, {matchScore:s, matchKind:kind}));
+    jobs.push(Object.assign(j, {matchScore:s, matchKind:kind, matchedName:String(c).trim().slice(0,80)}));
   });
   if(!jobs.length) return {error:'No job rows match this name.'};
   return {jobs};

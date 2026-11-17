@@ -1079,7 +1079,7 @@ exports.nchJobShare = onRequest(
             jobNumber, vd: j.vd || '', site: j.site || '', cls: j.cls || '', shift: j.shift || '',
             mob: j.mob, first: j.first || '', last: j.last || '', demob: j.demob, sdDate: j.sdDate || '', sdText: j.sdText || '',
             travelIn: j.travelIn || '', travelOut: j.travelOut || '', accom: j.accom || '',
-            matchKind: j.matchKind, targetInstallId: d.id, status: 'pending',
+            matchKind: j.matchKind, matchedName: j.matchedName || '', targetInstallId: d.id, status: 'pending',
             cutoffMs: shareCore.cutoffMs(j.demob),
             expireAt: Timestamp.fromMillis(shareCore.poolExpiryMs(j.demob)),
             createdAt: FieldValue.serverTimestamp(),
@@ -1089,7 +1089,7 @@ exports.nchJobShare = onRequest(
         if (!written) continue;
         if (j.matchKind === 'suggest') suggested++; else offered++;
         // Alert the phone if it has allowed alerts. The offer is already stored; a failed alert changes nothing.
-        if (d.data().push) await sendOfferAlert(d.id, d.data().push, jobNumber, oid, j.matchKind);
+        if (d.data().push) await sendOfferAlert(d.id, d.data().push, jobNumber, oid, j.matchKind, j.matchedName);
       }
     }
     res.json({ offered, suggested });
@@ -1097,13 +1097,13 @@ exports.nchJobShare = onRequest(
 );
 
 // Web Push alert for one new offer. Dead subscriptions (404/410) are removed.
-async function sendOfferAlert(installId, sub, jobNumber, offerId, kind) {
+async function sendOfferAlert(installId, sub, jobNumber, offerId, kind, matchedName) {
   try {
     webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE.value());
     await webpush.sendNotification(sub, JSON.stringify({
       title: kind === 'suggest' ? 'Is this you? Job numbers offered' : 'Job numbers offered to you',
       body: kind === 'suggest'
-        ? 'Check job ' + jobNumber + ' in the app before accepting.'
+        ? 'The email says "' + (matchedName || '') + '". Check job ' + jobNumber + ' in the app before accepting.'
         : 'Tap to see and accept job ' + jobNumber + '. Nothing is added until you accept.',
       url: './?offers=1',
       offerId, installId, kind: kind || 'match',
