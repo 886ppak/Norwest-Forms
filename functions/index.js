@@ -1067,10 +1067,10 @@ exports.nchJobShare = onRequest(
         const jobNumber = j.vd || `${j.site || 'job'}-${j.mob}`;
         const oid = shareCore.offerId(jobNumber, d.id);
         const ref = db.collection('sharedJobs').doc(oid);
-        await db.runTransaction(async (tx) => {
+        const written = await db.runTransaction(async (tx) => {
           const cur = await tx.get(ref);
           // Already accepted or dismissed by this phone: leave it alone.
-          if (cur.exists && cur.data().status !== 'pending') return;
+          if (cur.exists && cur.data().status !== 'pending') return false;
           tx.set(ref, {
             jobNumber, vd: j.vd || '', site: j.site || '', cls: j.cls || '', shift: j.shift || '',
             mob: j.mob, first: j.first || '', last: j.last || '', demob: j.demob, sdDate: j.sdDate || '', sdText: j.sdText || '',
@@ -1080,7 +1080,9 @@ exports.nchJobShare = onRequest(
             expireAt: Timestamp.fromMillis(shareCore.poolExpiryMs(j.demob)),
             createdAt: FieldValue.serverTimestamp(),
           });
+          return true;
         });
+        if (!written) continue;
         if (j.matchKind === 'suggest') suggested++; else offered++;
       }
     }
