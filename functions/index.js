@@ -1011,3 +1011,137 @@ exports.nchGmailScan = onSchedule(
     }
   }
 );
+
+// ===== Job sharing (P2P), device-based: no login. See share-core.js for the rules. =====
+// Collections (no client access; the rules deny by default, these functions use the admin SDK):
+//   nchDevices/{installId}  { name, lastOpenedMs, pushToken? }
+//   sharedJobs/{offerId}    { jobNumber, vd, site, shift, mob, demob, sdDate, sdText, cls, matchKind,
+//                             targetInstallId, status: pending|accepted|dismissed, cutoffMs, expireAt, createdAt }
+// The sharer's email text is read in memory and never stored.
+const shareCore = require('./share-core.js');
+const { calParseEmailFuzzy: parseEmailFuzzy } = require('./calparser.js');
+
+function shareId(v) { return typeof v === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(v) ? v : null; }
+function shareName(v) { return String(v == null ? '' : v).trim().slice(0, 80); }
+
+exports.nchDeviceTouch = onRequest(
+  { region: REGION, invoker: 'public', maxInstances: 5 },
+  async (req, res) => {
+    if (nchCors(req, res)) return;
+    if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
+    const id = shareId((req.body || {}).installId);
+    const name = shareName((req.body || {}).name);
+    if (!id || !name) { res.status(400).json({ error: 'Bad request' }); return; }
+    await getFirestore().collection('nchDevices').doc(id).set(
+      { name, lastOpenedMs: Date.now() }, { merge: true });
+    res.json({ ok: true });
+  }
+);
+
+// The sharer sends the email text. Every other registered phone whose name matches
+// (exact or close) gets a pending offer, unless the job's cut-off has passed.
+exports.nchJobShare = onRequest(
+  { region: REGION, invoker: 'public', maxInstances: 5, timeoutSeconds: 60 },
+  async (req, res) => {
+    if (nchCors(req, res)) return;
+    if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
+    const body = req.body || {};
+    const sharer = shareId(body.installId);
+    const name = shareName(body.name);
+    const text = typeof body.emailText === 'string' ? body.emailText : '';
+    if (!sharer || !name || !text || text.length > 300000) { res.status(400).json({ error: 'Bad request' }); return; }
+    const now = Date.now();
+    const db = getFirestore();
+    await db.collection('nchDevices').doc(sharer).set({ name, lastOpenedMs: now }, { merge: true });
+
+    const devices = await db.collection('nchDevices').get();
+    let offered = 0, suggested = 0;
+    for (const d of devices.docs) {
+      if (d.id === sharer) continue;
+      const dname = shareName(d.data().name);
+      if (!dname) continue;
+      const r = parseEmailFuzzy(text, dname, String(body.subject || '').slice(0, 200));
+      if (!r.jobs) continue;
+      for (const j of r.jobs) {
+        if (!j.demob || !shareCore.isOfferable({ endDate: j.demob }, now)) continue;
+        const jobNumber = j.vd || `${j.site || 'job'}-${j.mob}`;
+        const oid = shareCore.offerId(jobNumber, d.id);
+        const ref = db.collection('sharedJobs').doc(oid);
+        await db.runTransaction(async (tx) => {
+          const cur = await tx.get(ref);
+          // Already accepted or dismissed by this phone: leave it alone.
+          if (cur.exists && cur.data().status !== 'pending') return;
+          tx.set(ref, {
+            jobNumber, vd: j.vd || '', site: j.site || '', cls: j.cls || '', shift: j.shift || '',
+            mob: j.mob, demob: j.demob, sdDate: j.sdDate || '', sdText: j.sdText || '',
+            matchKind: j.matchKind, targetInstallId: d.id, status: 'pending',
+            cutoffMs: shareCore.cutoffMs(j.demob),
+            expireAt: Timestamp.fromMillis(shareCore.poolExpiryMs(j.demob)),
+            createdAt: FieldValue.serverTimestamp(),
+          });
+        });
+        if (j.matchKind === 'suggest') suggested++; else offered++;
+      }
+    }
+    res.json({ offered, suggested });
+  }
+);
+
+// The phone asks for its pending offers. Only offers whose cut-off has not passed.
+exports.nchOffersGet = onRequest(
+  { region: REGION, invoker: 'public', maxInstances: 5 },
+  async (req, res) => {
+    if (nchCors(req, res)) return;
+    const id = shareId(req.query.installId);
+    if (!id) { res.status(400).json({ error: 'Bad request' }); return; }
+    const now = Date.now();
+    const snap = await getFirestore().collection('sharedJobs')
+      .where('targetInstallId', '==', id).where('status', '==', 'pending').get();
+    const offers = snap.docs.map(d => Object.assign({ id: d.id }, d.data()))
+      .filter(o => o.cutoffMs > now)
+      .map(({ targetInstallId, createdAt, expireAt, cutoffMs, ...rest }) => Object.assign(rest, { cutoffMs }));
+    res.json({ offers });
+  }
+);
+
+// Accept or dismiss one offer. Accept is the only way a job reaches the phone's calendar (the phone adds it).
+exports.nchOfferAnswer = onRequest(
+  { region: REGION, invoker: 'public', maxInstances: 5 },
+  async (req, res) => {
+    if (nchCors(req, res)) return;
+    if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
+    const body = req.body || {};
+    const id = shareId(body.installId);
+    const oid = typeof body.offerId === 'string' && /^[A-Za-z0-9_-]{1,120}$/.test(body.offerId) ? body.offerId : null;
+    const action = body.action === 'accept' ? 'accepted' : body.action === 'dismiss' ? 'dismissed' : null;
+    if (!id || !oid || !action) { res.status(400).json({ error: 'Bad request' }); return; }
+    const ref = getFirestore().collection('sharedJobs').doc(oid);
+    const result = await getFirestore().runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists || snap.data().targetInstallId !== id) return { code: 404 };
+      const o = snap.data();
+      if (o.status !== 'pending') return { code: 200, status: o.status };
+      if (Date.now() >= o.cutoffMs) return { code: 410 };
+      tx.update(ref, { status: action, answeredAt: FieldValue.serverTimestamp() });
+      return { code: 200, status: action };
+    });
+    if (result.code === 404) { res.status(404).json({ error: 'Not found' }); return; }
+    if (result.code === 410) { res.status(410).json({ error: 'Past the submission cut-off.' }); return; }
+    res.json({ status: result.status });
+  }
+);
+
+// Daily clean-up: pool rows past their expiry, and phone registrations idle for 60 days.
+exports.nchShareCleanup = onSchedule(
+  { schedule: '10 4 * * *', timeZone: 'Australia/Perth', region: REGION, timeoutSeconds: 300 },
+  async () => {
+    const db = getFirestore();
+    const now = Date.now();
+    const old = await db.collection('sharedJobs').where('expireAt', '<', Timestamp.fromMillis(now)).limit(500).get();
+    for (const d of old.docs) await d.ref.delete();
+    const devs = await db.collection('nchDevices').get();
+    const stale = shareCore.staleDeviceIds(devs.docs.map(d => ({ id: d.id, lastOpenedMs: d.data().lastOpenedMs })), now);
+    for (const id of stale) await db.collection('nchDevices').doc(id).delete();
+    console.log(`nchShareCleanup: removed ${old.size} pool row(s), ${stale.length} idle phone(s)`);
+  }
+);
