@@ -1212,3 +1212,39 @@ exports.nchShareCleanup = onSchedule(
     console.log(`nchShareCleanup: removed ${old.size} pool row(s), ${stale.length} idle phone(s)`);
   }
 );
+
+// ---- Admin: which people have job alerts on (v1.100). Owner-only; returns names and a yes/no, no phone ids. ----
+// nchDevices/{installId} has name, and a push field only while alerts are on (deleted when turned off).
+exports.nchAlertsAdmin = onRequest(
+  { region: REGION, invoker: 'public', maxInstances: 3 },
+  async (req, res) => {
+    const origin = new URL(ADMIN_PAGE_URL.value()).origin;
+    res.set('Access-Control-Allow-Origin', origin);
+    res.set('Vary', 'Origin');
+    if (req.method === 'OPTIONS') {
+      res.set('Access-Control-Allow-Methods', 'GET');
+      res.set('Access-Control-Allow-Headers', 'Authorization');
+      res.set('Access-Control-Max-Age', '3600');
+      res.status(204).send('');
+      return;
+    }
+    if (req.method !== 'GET') { res.status(405).send('Method Not Allowed'); return; }
+    const auth = String(req.get('Authorization') || '');
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+    if (!token) { res.status(401).json({ error: 'Sign in first' }); return; }
+    let email;
+    try {
+      email = String((await getAuth().verifyIdToken(token)).email || '').toLowerCase();
+    } catch (e) {
+      res.status(401).json({ error: 'Sign in again' });
+      return;
+    }
+    if (!ADMIN_EMAILS.includes(email)) { res.status(403).json({ error: 'Not an admin account' }); return; }
+    const snap = await getFirestore().collection('nchDevices').get();
+    const people = snap.docs.map(d => {
+      const x = d.data() || {};
+      return { name: String(x.name || '').slice(0, 80), alerts: !!x.push };
+    }).filter(p => p.name);
+    res.json({ people });
+  }
+);

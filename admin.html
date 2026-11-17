@@ -72,6 +72,7 @@
   .mk.ok{ background:#e3f1e8; color:var(--good); }
   .mk.late{ background:#fde9e0; color:var(--accent-dark); }
   .mk.oth{ background:#eef0f4; color:#4a5263; }
+  .mk.alert{ background:#fbd5d0; color:#b42318; }
   .legend{ font-size:11px; color:var(--muted); margin-top:8px; line-height:1.7; }
   ul.plain{ list-style:none; margin:0; padding:0; }
   ul.plain li{ padding:7px 0; border-top:1px solid #eee9de; font-size:13.5px; display:flex; justify-content:space-between; gap:8px; }
@@ -193,7 +194,7 @@
     <div class="card">
       <h2>Per person <span class="sub">(timesheets, last 8 weeks)</span></h2>
       <div class="scroll"><table class="grid" id="personGrid"></table></div>
-      <div class="legend"><span class="mk ok">✓</span> on time &nbsp; <span class="mk late">L</span> late &nbsp; <span class="mk oth">lv</span>/<span class="mk oth">tr</span> leave / training only. &nbsp;<span class="mk ok">▣</span> installed app / <span class="muted">▢</span> browser (since v1.47, latest form; no mark = sent before then). Names merged ignoring case; a resend counts once.</div>
+      <div class="legend"><span class="mk ok">✓</span> on time &nbsp; <span class="mk late">L</span> late &nbsp; <span class="mk oth">lv</span>/<span class="mk oth">tr</span> leave / training only. &nbsp;<span class="mk ok">▣</span> installed app / <span class="mk alert">▣</span> installed + job alerts on / <span class="muted">▢</span> browser (since v1.47, latest form; no mark = sent before then). Names merged ignoring case; a resend counts once.</div>
     </div>
 
     <div class="card">
@@ -284,6 +285,7 @@ const nameKey = n => (n || '').trim().replace(/\s+/g, ' ').toLowerCase();
 let subs = [], reports = [], usage = [], subsLive = false, repsLive = false, usageLive = false, gotData = false;
 let jobHealth = { state: 'loading' };
 let archive = { state: 'idle', months: [] };     // older months, read from Nextcloud via usageArchive
+let alertPeople = [];                              // [{name, alerts}] from nchAlertsAdmin
 let unsubs = [];
 
 // ---- auth
@@ -327,6 +329,10 @@ const PASSKEY_FN = useEmu
 const USAGE_ARCHIVE_FN = useEmu
   ? 'http://127.0.0.1:5001/demo-norwest/australia-southeast1/usageArchive'
   : 'https://australia-southeast1-norwest-forms.cloudfunctions.net/usageArchive';
+// Who has job alerts on (owner-only function; names and yes/no only).
+const NCH_ALERTS_FN = useEmu
+  ? 'http://127.0.0.1:5001/demo-norwest/australia-southeast1/nchAlertsAdmin'
+  : 'https://australia-southeast1-norwest-forms.cloudfunctions.net/nchAlertsAdmin';
 const PKCE_KEY = 'norwestAdminPkce';
 const b64url = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
@@ -427,6 +433,21 @@ function start(user) {
     }, onErr));
   loadJobNumbers();
   loadArchive(user);
+  loadAlerts(user);
+}
+
+// Who has job alerts on, for the red installed square. Fails quietly: squares just stay green.
+async function loadAlerts(user) {
+  try {
+    const token = await user.getIdToken();
+    const r = await fetch(NCH_ALERTS_FN, { headers: { Authorization: 'Bearer ' + token }, cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    alertPeople = Array.isArray(j.people) ? j.people : [];
+  } catch (e) {
+    alertPeople = [];
+  }
+  render();
 }
 
 // Older months. Firestore only has 90 days of detail, so anything past that
@@ -648,8 +669,9 @@ function render() {
   // ---- per-person grid (newest week first, so this week is visible on a phone)
   const gridWeeks = weeks;
   const keys = Object.keys(spell).sort((a, b) => display(a).localeCompare(display(b)));
+  const alertKeys = new Set(alertPeople.filter(p => p.alerts).map(p => nameKey(p.name)));
   $('personGrid').innerHTML = '<tr><th>Name</th>' + gridWeeks.map(we => `<th>${fmtWeek(we).replace(' ', '<br>')}</th>`).join('') + '</tr>' +
-    (keys.length ? keys.map(k => '<tr><td>' + (k in instBy ? (instBy[k] ? '<span class="mk ok" title="installed app">▣</span> ' : '<span class="muted" title="browser">▢</span> ') : '') + esc(display(k)) + `<span class="co">${esc(company[k] || '')}</span></td>` + gridWeeks.map(we => {
+    (keys.length ? keys.map(k => '<tr><td>' + (k in instBy ? (instBy[k] ? (alertKeys.has(k) ? '<span class="mk alert" title="installed app, job alerts on">▣</span> ' : '<span class="mk ok" title="installed app">▣</span> ') : '<span class="muted" title="browser">▢</span> ') : '') + esc(display(k)) + `<span class="co">${esc(company[k] || '')}</span></td>` + gridWeeks.map(we => {
       const mine = (byWeek[we] || []).filter(r => r.key === k);
       const ts = mine.filter(r => r.formType === 'timesheet');
       if (ts.length) return ts.some(r => !r.late) ? '<td><span class="mk ok">✓</span></td>' : '<td><span class="mk late">L</span></td>';
