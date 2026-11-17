@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norwest-timesheet-v143';
+const CACHE_NAME = 'norwest-timesheet-v144';
 const APP_SHELL = [
   './',
   './index.html',
@@ -89,3 +89,30 @@ function appResponse(event) {
     })
   );
 }
+
+// Job-share alerts (Web Push). The server sends a short message; tapping it opens the app on the offers card.
+self.addEventListener('push', event => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) { data = {}; }
+  const title = data.title || 'Job numbers offered to you';
+  const options = {
+    body: data.body || 'Tap to see and accept the job numbers.',
+    tag: 'job-offers',
+    renotify: false,
+    icon: 'icons/icon-192.png',
+    data: { url: data.url || './?offers=1' }
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const target = new URL((event.notification.data && event.notification.data.url) || './', self.location.origin + self.registration.scope).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      for (const c of list) {
+        if (c.url.startsWith(self.registration.scope) && 'focus' in c) return c.focus();
+      }
+      return self.clients.openWindow(target);
+    })
+  );
+});

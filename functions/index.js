@@ -1019,6 +1019,10 @@ exports.nchGmailScan = onSchedule(
 //                             targetInstallId, status: pending|accepted|dismissed, cutoffMs, expireAt, createdAt }
 // The sharer's email text is read in memory and never stored.
 const shareCore = require('./share-core.js');
+const webpush = require('web-push');
+const VAPID_PRIVATE = defineSecret('VAPID_PRIVATE_KEY');
+const VAPID_PUBLIC = 'BOfgnMupq0feSrZ-O2ZSKQHv0tgX-tADp_u3alXyCMMAll8FhKkJEtf1ndLqqM_mXLt8AJ1jkSVU6G5uL3x5m3I';
+const VAPID_SUBJECT = 'https://886ppak.github.io/Norwest-Forms/';
 const { calParseEmailFuzzy: parseEmailFuzzy } = require('./calparser.js');
 
 function shareId(v) { return typeof v === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(v) ? v : null; }
@@ -1041,7 +1045,7 @@ exports.nchDeviceTouch = onRequest(
 // The sharer sends the email text. Every other registered phone whose name matches
 // (exact or close) gets a pending offer, unless the job's cut-off has passed.
 exports.nchJobShare = onRequest(
-  { region: REGION, invoker: 'public', maxInstances: 5, timeoutSeconds: 60 },
+  { region: REGION, invoker: 'public', maxInstances: 5, timeoutSeconds: 60, secrets: [VAPID_PRIVATE] },
   async (req, res) => {
     if (nchCors(req, res)) return;
     if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
@@ -1084,9 +1088,52 @@ exports.nchJobShare = onRequest(
         });
         if (!written) continue;
         if (j.matchKind === 'suggest') suggested++; else offered++;
+        // Alert the phone if it has allowed alerts. The offer is already stored; a failed alert changes nothing.
+        if (d.data().push) await sendOfferAlert(d.id, d.data().push, jobNumber);
       }
     }
     res.json({ offered, suggested });
+  }
+);
+
+// Web Push alert for one new offer. Dead subscriptions (404/410) are removed.
+async function sendOfferAlert(installId, sub, jobNumber) {
+  try {
+    webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE.value());
+    await webpush.sendNotification(sub, JSON.stringify({
+      title: 'Job numbers offered to you',
+      body: 'Tap to see and accept job ' + jobNumber + '. Nothing is added until you accept.',
+      url: './?offers=1',
+    }), { TTL: 86400 });
+  } catch (e) {
+    const code = e && e.statusCode;
+    if (code === 404 || code === 410) {
+      await getFirestore().collection('nchDevices').doc(installId).set({ push: FieldValue.delete() }, { merge: true });
+    } else {
+      console.error('sendOfferAlert failed', code || String(e && e.message || e).slice(0, 120));
+    }
+  }
+}
+
+// A phone registers its Web Push subscription so it can be alerted about new offers.
+exports.nchPushSubscribe = onRequest(
+  { region: REGION, invoker: 'public', maxInstances: 5 },
+  async (req, res) => {
+    if (nchCors(req, res)) return;
+    if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
+    const body = req.body || {};
+    const id = shareId(body.installId);
+    const sub = body.subscription || {};
+    const endpoint = typeof sub.endpoint === 'string' ? sub.endpoint : '';
+    const p256dh = sub.keys && typeof sub.keys.p256dh === 'string' ? sub.keys.p256dh : '';
+    const auth = sub.keys && typeof sub.keys.auth === 'string' ? sub.keys.auth : '';
+    if (!id || !/^https:\/\/[^\s]{10,2000}$/.test(endpoint) || !p256dh || !auth || p256dh.length > 200 || auth.length > 100) {
+      res.status(400).json({ error: 'Bad request' });
+      return;
+    }
+    await getFirestore().collection('nchDevices').doc(id).set(
+      { push: { endpoint, keys: { p256dh, auth } }, pushAt: Date.now() }, { merge: true });
+    res.json({ ok: true });
   }
 );
 
