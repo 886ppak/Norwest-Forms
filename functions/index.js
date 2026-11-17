@@ -1089,7 +1089,7 @@ exports.nchJobShare = onRequest(
         if (!written) continue;
         if (j.matchKind === 'suggest') suggested++; else offered++;
         // Alert the phone if it has allowed alerts. The offer is already stored; a failed alert changes nothing.
-        if (d.data().push) await sendOfferAlert(d.id, d.data().push, jobNumber);
+        if (d.data().push) await sendOfferAlert(d.id, d.data().push, jobNumber, oid);
       }
     }
     res.json({ offered, suggested });
@@ -1097,13 +1097,14 @@ exports.nchJobShare = onRequest(
 );
 
 // Web Push alert for one new offer. Dead subscriptions (404/410) are removed.
-async function sendOfferAlert(installId, sub, jobNumber) {
+async function sendOfferAlert(installId, sub, jobNumber, offerId) {
   try {
     webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE.value());
     await webpush.sendNotification(sub, JSON.stringify({
       title: 'Job numbers offered to you',
       body: 'Tap to see and accept job ' + jobNumber + '. Nothing is added until you accept.',
       url: './?offers=1',
+      offerId, installId,
     }), { TTL: 86400 });
   } catch (e) {
     const code = e && e.statusCode;
@@ -1145,12 +1146,17 @@ exports.nchOffersGet = onRequest(
     const id = shareId(req.query.installId);
     if (!id) { res.status(400).json({ error: 'Bad request' }); return; }
     const now = Date.now();
-    const snap = await getFirestore().collection('sharedJobs')
-      .where('targetInstallId', '==', id).where('status', '==', 'pending').get();
-    const offers = snap.docs.map(d => Object.assign({ id: d.id }, d.data()))
-      .filter(o => o.cutoffMs > now)
-      .map(({ targetInstallId, createdAt, expireAt, cutoffMs, ...rest }) => Object.assign(rest, { cutoffMs }));
-    res.json({ offers });
+    const db = getFirestore().collection('sharedJobs');
+    const [pendingSnap, acceptedSnap] = await Promise.all([
+      db.where('targetInstallId', '==', id).where('status', '==', 'pending').get(),
+      db.where('targetInstallId', '==', id).where('status', '==', 'accepted').get(),
+    ]);
+    const clean = ({ targetInstallId, createdAt, expireAt, cutoffMs, answeredAt, ...rest }, d) =>
+      Object.assign({ id: d.id }, rest, { cutoffMs });
+    const offers = pendingSnap.docs.map(d => clean(d.data(), d)).filter(o => o.cutoffMs > now);
+    // Accepted from a notification but not yet put on the phone's calendar.
+    const added = acceptedSnap.docs.filter(d => !d.data().calendarAt).map(d => clean(d.data(), d));
+    res.json({ offers, accepted: added });
   }
 );
 
@@ -1163,18 +1169,26 @@ exports.nchOfferAnswer = onRequest(
     const body = req.body || {};
     const id = shareId(body.installId);
     const oid = typeof body.offerId === 'string' && /^[A-Za-z0-9_-]{1,120}$/.test(body.offerId) ? body.offerId : null;
-    const action = body.action === 'accept' ? 'accepted' : body.action === 'dismiss' ? 'dismissed' : null;
+    const action = body.action === 'accept' ? 'accepted' : body.action === 'dismiss' ? 'dismissed'
+      : body.action === 'added' ? 'added' : null;
     if (!id || !oid || !action) { res.status(400).json({ error: 'Bad request' }); return; }
     const ref = getFirestore().collection('sharedJobs').doc(oid);
     const result = await getFirestore().runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       if (!snap.exists || snap.data().targetInstallId !== id) return { code: 404 };
       const o = snap.data();
+      if (action === 'added') {
+        // The phone has put an accepted job on its calendar. Stops it being sent again.
+        if (o.status !== 'accepted') return { code: 409 };
+        tx.update(ref, { calendarAt: FieldValue.serverTimestamp() });
+        return { code: 200, status: 'added' };
+      }
       if (o.status !== 'pending') return { code: 200, status: o.status };
       if (Date.now() >= o.cutoffMs) return { code: 410 };
       tx.update(ref, { status: action, answeredAt: FieldValue.serverTimestamp() });
       return { code: 200, status: action };
     });
+    if (result.code === 409) { res.status(409).json({ error: 'Not accepted' }); return; }
     if (result.code === 404) { res.status(404).json({ error: 'Not found' }); return; }
     if (result.code === 410) { res.status(410).json({ error: 'Past the submission cut-off.' }); return; }
     res.json({ status: result.status });

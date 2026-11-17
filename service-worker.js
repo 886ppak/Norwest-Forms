@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norwest-timesheet-v144';
+const CACHE_NAME = 'norwest-timesheet-v145';
 const APP_SHELL = [
   './',
   './index.html',
@@ -90,23 +90,44 @@ function appResponse(event) {
   );
 }
 
-// Job-share alerts (Web Push). The server sends a short message; tapping it opens the app on the offers card.
+// Job-share alerts (Web Push). The server sends a short message with the offer id.
+// Accept on the notification records the acceptance; the app adds the job to the calendar next time it opens.
+const NCH_API_SW = 'https://australia-southeast1-norwest-forms.cloudfunctions.net';
 self.addEventListener('push', event => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch (e) { data = {}; }
   const title = data.title || 'Job numbers offered to you';
   const options = {
     body: data.body || 'Tap to see and accept the job numbers.',
-    tag: 'job-offers',
+    tag: 'job-offers-' + (data.offerId || 'x'),
     renotify: false,
     icon: 'icons/icon-192.png',
-    data: { url: data.url || './?offers=1' }
+    actions: [{ action: 'accept', title: 'Accept' }],
+    data: { url: data.url || './?offers=1', offerId: data.offerId || '', installId: data.installId || '' }
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
+function swSay(title, body){
+  return self.registration.showNotification(title, { body, tag: 'job-offers-result', icon: 'icons/icon-192.png', data: { url: './?offers=1' } });
+}
 self.addEventListener('notificationclick', event => {
+  const d = event.notification.data || {};
   event.notification.close();
-  const target = new URL((event.notification.data && event.notification.data.url) || './', self.location.origin + self.registration.scope).href;
+  if (event.action === 'accept' && d.offerId && d.installId) {
+    // Record the acceptance without opening the app. The app adds the job to the calendar when it next opens.
+    event.waitUntil(
+      fetch(NCH_API_SW + '/nchOfferAnswer', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ installId: d.installId, offerId: d.offerId, action: 'accept' })
+      }).then(r => {
+        if (r.ok) return swSay('Job accepted', 'It goes on your calendar when you open Norwest Forms.');
+        if (r.status === 410) return swSay('Too late', 'That job is past its submission cut-off.');
+        return swSay('Not accepted', 'Something went wrong. Open Norwest Forms and try again.');
+      }).catch(() => swSay('Not accepted', 'No connection. Open Norwest Forms and try again.'))
+    );
+    return;
+  }
+  const target = new URL(d.url || './', self.location.origin + self.registration.scope).href;
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
       for (const c of list) {
