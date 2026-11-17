@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norwest-timesheet-v147';
+const CACHE_NAME = 'norwest-timesheet-v148';
 const APP_SHELL = [
   './',
   './index.html',
@@ -148,7 +148,10 @@ self.addEventListener('notificationclick', event => {
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
       for (const c of list) {
-        if (c.url.startsWith(self.registration.scope) && 'focus' in c) return c.focus();
+        if (c.url.startsWith(self.registration.scope) && 'focus' in c) {
+          c.postMessage({ type: 'open-offers' });
+          return c.focus();
+        }
       }
       return self.clients.openWindow(target);
     }).then(() => (d.offerId && d.installId) ? swShowAgainIfPending(d) : undefined)
