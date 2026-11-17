@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norwest-timesheet-v148';
+const CACHE_NAME = 'norwest-timesheet-v149';
 const APP_SHELL = [
   './',
   './index.html',
@@ -144,12 +144,13 @@ self.addEventListener('notificationclick', event => {
     );
     return;
   }
-  const target = new URL(d.url || './', self.registration.scope).href;
+  const path = d.offerId ? './?offer=' + encodeURIComponent(d.offerId) : (d.url || './');
+  const target = new URL(path, self.registration.scope).href;
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
       for (const c of list) {
         if (c.url.startsWith(self.registration.scope) && 'focus' in c) {
-          c.postMessage({ type: 'open-offers' });
+          c.postMessage(d.offerId ? { type: 'open-offer', id: d.offerId } : { type: 'open-offers' });
           return c.focus();
         }
       }
