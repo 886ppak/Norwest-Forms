@@ -99,5 +99,26 @@ function calParseEmail(text, name, subject){
   if(!jobs.length) return {error:'Your name wasn’t found as a job row in this text. Check the spelling under My name matches the email, then try again.'};
   return {jobs};
 }
+
+// Fuzzy version for job sharing: a cell counts as this worker's row when its name
+// scores at least SUGGEST_MIN against the profile name (see name-match.js).
+// Each job carries matchScore and matchKind ('match' | 'suggest').
+function calParseEmailFuzzy(text, name, subject){
+  const { nameScore, classify } = require('./name-match.js');
+  if(!calNorm(name)) return {error:'No name to match.'};
+  const cells = calCells(text);
+  const jobs=[];
+  cells.forEach((c,n)=>{
+    const s = nameScore(name, c);
+    const kind = classify(s);
+    if(!kind) return;
+    const j = calParseRow(cells,n);
+    if(!j.hasTravel || !j.shift) return;
+    j.site = j.site || subject || '';
+    jobs.push(Object.assign(j, {matchScore:s, matchKind:kind}));
+  });
+  if(!jobs.length) return {error:'No job rows match this name.'};
+  return {jobs};
+}
 // ===== end parser =====
-module.exports = { calParseEmail, calParseRow, calIsoOf, calCells, calShiftBase };
+module.exports = { calParseEmail, calParseEmailFuzzy, calParseRow, calIsoOf, calCells, calShiftBase };
