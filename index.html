@@ -4252,6 +4252,27 @@ async function gmailRemoveJob(key){
     calRefresh(); profileRenderAccount();
   }catch(e){ showToast('Could not reach the server. Try again shortly.'); }
 }
+// Stays on screen until the Gmail connection is fixed: shown when the weekly check cannot get a token (v2.0).
+function gmailBannerUpdate(status){
+  let bn = document.getElementById('gmailBanner');
+  if(!bn){
+    bn = document.createElement('div');
+    bn.id = 'gmailBanner';
+    bn.setAttribute('role', 'alert');
+    bn.style.cssText = 'position:fixed; left:0; right:0; top:env(safe-area-inset-top, 0px); z-index:46; display:none; align-items:center; gap:10px; padding:10px 12px; background:#1f3240; color:#fff; font-size:14px; box-shadow:0 4px 14px rgba(0,0,0,.25)';
+    bn.innerHTML = '<span id="gmailBannerText" style="flex:1; line-height:1.35"></span>'
+      + '<button type="button" id="gmailBannerFix" style="background:#e8a317; color:#1c2730; border:none; border-radius:8px; padding:8px 12px; font-weight:700; cursor:pointer">Reconnect</button>'
+      + '<button type="button" id="gmailBannerClose" aria-label="Close" style="background:none; border:none; color:#fff; font-size:22px; line-height:1; cursor:pointer; padding:0 4px">&times;</button>';
+    document.body.appendChild(bn);
+    document.getElementById('gmailBannerFix').onclick = () => gmailConnect();
+    document.getElementById('gmailBannerClose').onclick = () => { bn.style.display = 'none'; };
+  }
+  const text = status === 'reconnect'
+    ? 'Your Gmail connection has expired, so job emails are not being checked. Reconnect to keep them coming in.'
+    : 'Gmail could not be checked. Reconnect if this keeps happening.';
+  document.getElementById('gmailBannerText').textContent = text;
+  bn.style.display = (status === 'reconnect' || status === 'error') ? 'flex' : 'none';
+}
 // Check this account's Gmail now (owner beta). The server allows one manual check an hour.
 async function gmailCheckNow(){
   const s = nchSession(); if(!s) return;
@@ -4263,7 +4284,7 @@ async function gmailCheckNow(){
     localStorage.removeItem(GMAIL_SUMMARY_KEY);
     showToast('Gmail checked. ' + j.jobs + ' job(s) found.');
     profileRenderAccount(); calRefresh();
-  }catch(e){ showToast('Could not reach the server. Try again shortly.'); }
+  }catch(e){ showToast('Could not check Gmail. If this keeps happening, sign out and sign in again.'); }
 }
 async function gmailDisconnect(){
   const s = nchSession(); if(!s) return;
@@ -5432,6 +5453,7 @@ async function nchSyncNow(){
       const after = JSON.stringify(body.gmail);
       if(before !== after){ localStorage.setItem(GMAIL_SUMMARY_KEY, after); gmailChanged = true; }
       if(body.gmail.status === 'reconnect' && !gmailNoticeShown){ gmailNoticeShown = true; showToast('Gmail import needs reconnecting. Open your profile.'); }
+      gmailBannerUpdate(body.gmail.status);
     }
   }catch(e){ return; }                       // offline: try again later, nothing lost
   const now = Date.now(), out = {}; let changed = false;
