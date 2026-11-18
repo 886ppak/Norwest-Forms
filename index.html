@@ -3662,6 +3662,8 @@ const SUBMISSIONS_KEEP_DAYS = 90;
 // account, and the phone remembers it once that account has signed in there.
 const USAGE_EXCLUDED_EMAILS = ['aiden.tunupopo@gmail.com', 'myslewer@gmail.com'];
 function usageExcluded(){
+  // Automated browsers (test runs, sub-agents driving the app) never count: they set navigator.webdriver (v2.0).
+  try{ if(navigator.webdriver) return true; }catch(e){}
   try{
     // One-time switch for a device that is not signed in (e.g. a PC): open the app with ?usage=off
     const u = new URL(location.href);
