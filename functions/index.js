@@ -979,6 +979,48 @@ exports.nchGmailDisconnect = onRequest(
 );
 
 // Weekly (Sun 03:17 Perth, before timesheets are done): every connected account, read its mail, keep its own rows. Errors are per account.
+// Owner's "Check Gmail now" (v2.1): the same scan as the weekly one, for this account only, at most once an hour.
+exports.nchGmailCheckNow = onRequest(
+  { region: REGION, invoker: 'public', secrets: GMAIL_SECRETS, timeoutSeconds: 300, memory: '512MiB' },
+  async (req, res) => {
+    if (nchCors(req, res)) return;
+    if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
+    const email = nchEmailFrom(req);
+    if (!email) { res.status(401).json({ error: 'Sign in again.' }); return; }
+    const ref = gmailDoc(email);
+    const doc = await ref.get();
+    const data = doc.exists ? doc.data() : {};
+    if (!data.refreshTokenBlob) { res.status(400).json({ error: 'Gmail is not connected.' }); return; }
+    const last = data.manualCheckAt ? data.manualCheckAt.toMillis() : 0;
+    if (Date.now() - last < 60 * 60 * 1000) {
+      res.status(429).json({ error: 'Gmail was checked in the last hour. Try again later.' });
+      return;
+    }
+    await ref.set({ manualCheckAt: Timestamp.now() }, { merge: true });
+    try {
+      const userSnap = await getFirestore().collection('nchUsers').doc(email).get();
+      const name = nchNameFrom(userSnap.exists ? userSnap.data() : {});
+      const r = await gmailCore.scanAccount(
+        { refreshTokenBlob: data.refreshTokenBlob, name, processedIds: data.processedIds || [], jobs: data.jobs || [], dismissed: data.dismissed || [] },
+        { fetchFn: fetch, clientId: GOOGLE_CLIENT_ID.value(), clientSecret: GOOGLE_CLIENT_SECRET.value(),
+          tokenKeySecret: GMAIL_TOKEN_KEY.value(), query: NCH_GMAIL_QUERY.value() }
+      );
+      await ref.set({
+        status: r.status,
+        lastRunAt: FieldValue.serverTimestamp(),
+        lastError: r.lastError || FieldValue.delete(),
+        processedIds: r.processedIds,
+        jobs: r.jobs,
+      }, { merge: true });
+      res.json({ ok: true, status: r.status, jobs: (r.jobs || []).length });
+    } catch (e) {
+      console.error('nchGmailCheckNow failed', String(e && e.message || e).slice(0, 120));
+      await ref.set({ status: 'error', lastRunAt: FieldValue.serverTimestamp(), lastError: 'scan failed' }, { merge: true });
+      res.status(500).json({ error: 'Gmail check failed. Try again later.' });
+    }
+  }
+);
+
 exports.nchGmailScan = onSchedule(
   { schedule: '17 3 * * 0', timeZone: 'Australia/Perth', region: REGION, secrets: GMAIL_SECRETS, timeoutSeconds: 540, memory: '512MiB' },
   async () => {

@@ -4222,6 +4222,7 @@ function gmailCardHtml(){
   } else {
     msg = 'Gmail is connected. ' + (g.jobs||[]).length + ' job(s) imported. Checked once a week.';
   }
+  if(g.connected) rows += '<button class="acctRow" onclick="gmailCheckNow()"><span>Check Gmail now</span></button>';
   if(g.connected) rows += '<button class="acctRow" onclick="gmailDisconnect()"><span>Disconnect Gmail</span></button>';
   rows += '<div class="hint" style="padding:8px 4px 0">This phone\'s usage id: '+calEsc(usageDeviceId())+' (owner only, for the usage stats)</div>';
   const ls = Number(localStorage.getItem('norwestLastSync') || 0);
@@ -4249,6 +4250,19 @@ async function gmailRemoveJob(key){
     if(g && Array.isArray(g.jobs)) { g.jobs = g.jobs.filter(j => calJobIdentity(j) !== key); localStorage.setItem(GMAIL_SUMMARY_KEY, JSON.stringify(g)); }
     showToast('Job removed.');
     calRefresh(); profileRenderAccount();
+  }catch(e){ showToast('Could not reach the server. Try again shortly.'); }
+}
+// Check this account's Gmail now (owner beta). The server allows one manual check an hour.
+async function gmailCheckNow(){
+  const s = nchSession(); if(!s) return;
+  showToast('Checking Gmail…');
+  try{
+    const r = await fetch(NCH_API + '/nchGmailCheckNow', {method:'POST', headers:{Authorization:'Bearer ' + s.token}});
+    const j = await r.json().catch(() => ({}));
+    if(!r.ok){ showToast(j.error || 'Could not check Gmail. Try again.'); return; }
+    localStorage.removeItem(GMAIL_SUMMARY_KEY);
+    showToast('Gmail checked. ' + j.jobs + ' job(s) found.');
+    profileRenderAccount(); calRefresh();
   }catch(e){ showToast('Could not reach the server. Try again shortly.'); }
 }
 async function gmailDisconnect(){
