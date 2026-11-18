@@ -4394,11 +4394,19 @@ function calRead(subject, fromShare){
   pre.scrollIntoView({behavior:'smooth', block:'start'});
 }
 // Save parsed jobs, jump to the first job's month and say what was added.
+// The email's columns for this job, in the email's order (v2.0). Shown as a row the user can swipe across.
+function calEmailRow(j){
+  const sd = [j.sdDate ? calFmt(j.sdDate) : '', j.sdText || ''].filter(Boolean).join(' ');
+  return [['VD JOB#', j.vd || ''], ['SITE', j.site || ''], ['Class', j.cls || ''], ['Full Name', calName()],
+    ['Shift', calShiftBase(j.shift)], ['Mobe', j.mob ? calFmt(j.mob) : ''], ['First Shift', j.first ? calFmt(j.first) : ''],
+    ['Travel In', j.travelIn || ''], ['Last Shift', j.last ? calFmt(j.last) : ''], ['SD/FD', sd],
+    ['Demob', j.demob ? calFmt(j.demob) : ''], ['Travel Out', j.travelOut || ''], ['Accommodation', j.accom || '']];
+}
 function calAddJobs(jobs){
   for(const j of jobs){
     const row = {vd:j.vd, site:j.site, cls:j.cls, commute:j.commute, shift:calShiftBase(j.shift),
       mob:j.mob, first:j.first, last:j.last, demob:j.demob, sd:{date:j.sdDate||'', text:j.sdText||''},
-      travelIn:j.travelIn, travelOut:j.travelOut, accom:j.accom};
+      travelIn:j.travelIn, travelOut:j.travelOut, accom:j.accom, emailRow: calEmailRow(j)};
     if(!calUpsert(row)){ showToast('Could not save: this phone is out of storage space.'); return; }
   }
   try{ localStorage.removeItem('norwestCalPending'); }catch(e){}
@@ -4408,7 +4416,14 @@ function calAddJobs(jobs){
   const f = jobs[0];
   calView = {y:+f.mob.slice(0,4), m:+f.mob.slice(5,7)};
   calRefresh();
-  document.getElementById('calendarView').scrollIntoView({behavior:'smooth', block:'start'});
+  // Jump to the saved job (it can be in a future month): scroll to its card and flash it for a moment.
+  try{
+    const saved = calLoad();
+    const idx = saved.findIndex(x => x.vd === f.vd && x.mob === f.mob && x.demob === f.demob);
+    const card = document.querySelectorAll('#calJobs .calJobCard')[idx];
+    if(card){ card.scrollIntoView({behavior:'smooth', block:'center'}); card.style.outline = '3px solid #e8622c'; setTimeout(() => { card.style.outline = ''; }, 3000); }
+    else document.getElementById('calendarView').scrollIntoView({behavior:'smooth', block:'start'});
+  }catch(e){ document.getElementById('calendarView').scrollIntoView({behavior:'smooth', block:'start'}); }
   logCalImport(jobs.length, calImportVia);
   const what = jobs.map(j => (j.vd ? 'VD ' + j.vd : (j.site || 'Job')) + ' (' + calFmt(j.mob) + (j.demob !== j.mob ? ' to ' + calFmt(j.demob) : '') + ')').join(', ');
   showToast('Added to your calendar: ' + what);
@@ -4501,6 +4516,14 @@ function calRender(){
   }
   document.getElementById('calGrid').innerHTML = html;
 }
+// The email row as a table you can swipe sideways, the same as the email (v2.0).
+function calEmailRowHtml(row){
+  const head = row.map(c => '<th style="text-align:left; font-weight:700; padding:6px 8px; white-space:nowrap; background:#e9edf1; color:#5d6b75; font-size:11px; border-bottom:1px solid #d9d5ca">' + calEsc(c[0]) + '</th>').join('');
+  const body = row.map(c => '<td style="padding:6px 8px; white-space:nowrap; border-bottom:1px solid #d9d5ca; background:#fff4d6">' + calEsc(c[1] || '') + '</td>').join('');
+  return '<div style="margin-top:8px; border:1px solid #d9d5ca; border-radius:10px; overflow:hidden">'
+    + '<div style="overflow-x:auto; -webkit-overflow-scrolling:touch"><table style="border-collapse:collapse; min-width:820px; font-size:12px; font-variant-numeric:tabular-nums"><thead><tr>' + head + '</tr></thead><tbody><tr>' + body + '</tr></tbody></table></div></div>'
+    + '<div style="font-size:11px; color:var(--muted); text-align:right; margin-top:4px">Swipe the row left to see more &rarr;</div>';
+}
 function calRenderList(){
   const jobs=calLoad(), el=document.getElementById('calJobs');
   // Gmail jobs that this phone does not already have, shown view-only below its own jobs
@@ -4520,6 +4543,7 @@ function calRenderList(){
       ${j.travelIn||j.travelOut?`<div style="margin-top:4px">Travel in: ${calEsc(j.travelIn||'-')} · out: ${calEsc(j.travelOut||'-')}</div>`:''}
       ${j.sd && (j.sd.date||j.sd.text)?`<div style="margin-top:4px">SD/FD: ${calEsc(calFmt(j.sd.date))} ${calEsc(j.sd.text||'')}</div>`:''}
       ${j.accom?`<div style="margin-top:4px">Accommodation: ${calEsc(j.accom)}</div>`:''}
+      ${j.emailRow?calEmailRowHtml(j.emailRow):''}
       ${fromGmail?`<button class="calDel" onclick="gmailRemoveJob(${JSON.stringify(calJobIdentity(j)).replace(/"/g,'&quot;')})">Remove this job</button>`:`<button class="calDel" onclick="calDelete(${i})">Delete this job</button>`}
     </div>`;
   };
