@@ -5374,7 +5374,8 @@ function impGuideHtml(){
     else installSteps = `<ol><li>Tap the <b>⋮</b> menu in your browser.</li><li>Tap <b>Install app</b> or <b>Add to Home screen</b>.</li><li>Open the new Norwest Forms icon.</li></ol>`;
   }
   const dev = d.iOS ? 'ios' : d.samsung ? 'samsung' : 'android';
-  const gif = `<div style="margin:8px 0 2px; font-size:12px; color:var(--muted)">Example for your phone:</div><img src="guides/import-${dev}.gif" alt="How to add a job from an email on ${dev}" onerror="this.remove()" style="width:100%; max-width:300px; border-radius:10px; border:1px solid #e5e0d4">`;
+  const pasteGif = dev === 'ios' ? `<div style="margin:12px 0 2px; font-size:12px; color:var(--muted)">No share? Copy the email and paste it instead (this also works in a browser):</div><img src="guides/import-ios-paste.gif" alt="How to paste a mobilization email into this app on iPhone" onerror="this.remove()" style="width:100%; max-width:300px; border-radius:12px; border:1px solid var(--line);">` : '';
+  const gif = `<div style="margin:8px 0 2px; font-size:12px; color:var(--muted)">Example for your phone:</div><img src="guides/import-${dev}.gif" alt="How to add a job from an email on ${dev}" onerror="this.remove()" style="width:100%; max-width:300px; border-radius:10px; border:1px solid #e5e0d4">${pasteGif}`;
   const importSteps = shareOk
     ? `<ol><li>Open the mobilisation email in Gmail.</li><li>Press and hold to select the job rows.</li><li>Tap <b>Share</b> and choose <b>Norwest Forms</b>.</li><li>The job is added to your calendar.</li></ol>`
     : `<ol><li>Open the mobilisation email and select the job rows.</li><li>Copy them, then paste into <b>Paste the email text</b> on this page and tap Add.</li></ol>`;
