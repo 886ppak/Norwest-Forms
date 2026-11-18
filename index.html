@@ -4280,11 +4280,12 @@ async function gmailCheckNow(){
   try{
     const r = await fetch(NCH_API + '/nchGmailCheckNow', {method:'POST', headers:{Authorization:'Bearer ' + s.token}});
     const j = await r.json().catch(() => ({}));
+    if(j.status === 'reconnect'){ showToast('Gmail needs you to authorise again.'); gmailConnect(); return; }
     if(!r.ok){ showToast(j.error || 'Could not check Gmail. Try again.'); return; }
     localStorage.removeItem(GMAIL_SUMMARY_KEY);
     showToast('Gmail checked. ' + j.jobs + ' job(s) found.');
     profileRenderAccount(); calRefresh();
-  }catch(e){ showToast('Could not check Gmail. If this keeps happening, sign out and sign in again.'); }
+  }catch(e){ gmailConnect(); }   // the saved access is no longer accepted: go through Google's authorise window again
 }
 async function gmailDisconnect(){
   const s = nchSession(); if(!s) return;
