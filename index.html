@@ -4230,8 +4230,14 @@ function gmailCardHtml(){
   return '<div class="hint" style="padding:8px 4px 0">'+calEsc(msg)+'</div>'+rows+
     '<div class="hint" style="padding:8px 4px 0; font-weight:600">Last sync: '+calEsc(when)+'</div>';
 }
+// The app session has expired: sign in again, then go straight on to Google's Gmail authorise window.
+function gmailSignInThenConnect(){
+  try{ sessionStorage.setItem('nchAfterSignIn', 'gmail'); }catch(e){}
+  showToast('Signing you in again…');
+  nchSignInStart();
+}
 async function gmailConnect(){
-  const s = nchSession(); if(!s) return;
+  const s = nchSession(); if(!s){ gmailSignInThenConnect(); return; }
   try{
     const r = await fetch(NCH_API + '/nchGmailStart', {method:'POST', headers:{Authorization:'Bearer ' + s.token}});
     const j = await r.json().catch(()=>({}));
@@ -4275,7 +4281,7 @@ function gmailBannerUpdate(status){
 }
 // Check this account's Gmail now (owner beta). The server allows one manual check an hour.
 async function gmailCheckNow(){
-  const s = nchSession(); if(!s) return;
+  const s = nchSession(); if(!s){ gmailSignInThenConnect(); return; }
   showToast('Checking Gmail…');
   try{
     const r = await fetch(NCH_API + '/nchGmailCheckNow', {method:'POST', headers:{Authorization:'Bearer ' + s.token}});
@@ -4285,7 +4291,7 @@ async function gmailCheckNow(){
     localStorage.removeItem(GMAIL_SUMMARY_KEY);
     showToast('Gmail checked. ' + j.jobs + ' job(s) found.');
     profileRenderAccount(); calRefresh();
-  }catch(e){ gmailConnect(); }   // the saved access is no longer accepted: go through Google's authorise window again
+  }catch(e){ gmailSignInThenConnect(); }   // the sign-in has expired: sign in, then the Gmail authorise window
 }
 async function gmailDisconnect(){
   const s = nchSession(); if(!s) return;
@@ -5408,6 +5414,8 @@ async function nchHandleReturn(){
     localStorage.setItem(NCH_SESSION_KEY, JSON.stringify({token: j.token, email: j.email, name: j.name || ''}));
     if(!profileLoad().name) profileSetName(j.name || '');   // keep the name the person set; only fill it if empty
     showToast('Signed in as ' + j.email);
+    let after = ''; try{ after = sessionStorage.getItem('nchAfterSignIn') || ''; sessionStorage.removeItem('nchAfterSignIn'); }catch(e){}
+    if(after === 'gmail'){ gmailConnect(); return; }
     nchSyncNow();
   }catch(e){ showToast('Could not reach the sign-in server. Try again shortly.'); }
 }
