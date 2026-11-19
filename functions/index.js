@@ -1384,47 +1384,80 @@ function museCodeOk(v) {
   return typeof v === 'string' && /^[A-Za-z0-9_-]{20,64}$/.test(v);
 }
 
-// Register (or replace) the pairing hash on the account. Authed: must be signed in as the test account.
+// Register (or replace) the pairing hash. Two modes:
+//   signed in as the test account -> pairing on nchUsers/{email}  (syncs to every phone of the account)
+//   not signed in                 -> pairing on nchDevices/{installId} (this phone only)
+// Device pairing is not a weaker credential in practice: nchOffersGet/nchOfferAnswer already trust
+// an installId on its own, so possession of a 16-byte random id is the existing device credential.
 exports.nchMusePair = onRequest(
   { region: REGION, invoker: 'public', maxInstances: 5, secrets: [NCH_SESSION_SECRET] },
   async (req, res) => {
     if (nchCors(req, res)) return;
     if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
-    const email = nchEmailFrom(req);
-    if (email !== MUSE_TEST_EMAIL) { res.status(401).json({ error: 'Sign in again.' }); return; }
-    const hash = (req.body || {}).codeHash;
+    const body = req.body || {};
+    const hash = body.codeHash;
     if (typeof hash !== 'string' || !/^[0-9a-f]{64}$/.test(hash)) {
       res.status(400).json({ error: 'Bad request' });
       return;
     }
-    // No undefined values: the Admin SDK throws on undefined. merge:true keeps `stores` intact.
-    await nchDoc(MUSE_TEST_EMAIL).set(
-      { museCodeHash: hash, museEmail: MUSE_TEST_EMAIL, musePairedAt: Date.now(), museFailed: 0 },
-      { merge: true });
-    res.json({ ok: true });
+    const email = nchEmailFrom(req);
+    const write = { museCodeHash: hash, musePairedAt: Date.now(), museFailed: 0 };
+    if (email === MUSE_TEST_EMAIL) {
+      // Account pairing: merge:true keeps `stores` (calendar sync) intact.
+      write.museEmail = MUSE_TEST_EMAIL;
+      write.museScope = 'account';
+      await nchDoc(MUSE_TEST_EMAIL).set(write, { merge: true });
+      res.json({ ok: true, scope: 'account' });
+      return;
+    }
+    // Not signed in (or signed in as someone else): pair this phone only.
+    const id = shareId(body.installId);
+    if (!id) { res.status(400).json({ error: 'Bad request' }); return; }
+    write.museEmail = '';
+    write.museScope = 'device';
+    await getFirestore().collection('nchDevices').doc(id).set(write, { merge: true });
+    res.json({ ok: true, scope: 'device' });
   }
 );
 
-// Revoke the pairing on the account: every phone signed in as it stops receiving Muse jobs.
+// Revoke. Revokes whichever pairing this phone can see: the account one (if signed in as the
+// test account) and/or this device's own. Both are attempted so a phone can always free itself.
 exports.nchMuseRevoke = onRequest(
   { region: REGION, invoker: 'public', maxInstances: 5, secrets: [NCH_SESSION_SECRET] },
   async (req, res) => {
     if (nchCors(req, res)) return;
     if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
+    const body = req.body || {};
+    const id = shareId(body.installId);
     const email = nchEmailFrom(req);
-    if (email !== MUSE_TEST_EMAIL) { res.status(401).json({ error: 'Sign in again.' }); return; }
-    try {
-      // update(), not set(): revoking an account with no document must not create one.
-      await nchDoc(MUSE_TEST_EMAIL).update({
-        museCodeHash: FieldValue.delete(), museEmail: FieldValue.delete(),
-        musePairedAt: FieldValue.delete(), museFailed: FieldValue.delete(),
-      });
-    } catch (e) {
-      if (!/NOT_FOUND|No document to update/.test(String(e && (e.code || e.message)))) {
-        console.error('nchMuseRevoke failed', String(e && e.message || e).slice(0, 120));
+    const clear = {
+      museCodeHash: FieldValue.delete(), museEmail: FieldValue.delete(),
+      musePairedAt: FieldValue.delete(), museFailed: FieldValue.delete(),
+      museScope: FieldValue.delete(),
+    };
+    let revoked = false;
+    if (email === MUSE_TEST_EMAIL) {
+      try {
+        // update(), not set(): revoking an account with no document must not create one.
+        await nchDoc(MUSE_TEST_EMAIL).update(clear);
+        revoked = true;
+      } catch (e) {
+        if (!/NOT_FOUND|No document to update/.test(String(e && (e.code || e.message)))) {
+          console.error('nchMuseRevoke account failed', String(e && e.message || e).slice(0, 120));
+        }
       }
     }
-    res.json({ ok: true });
+    if (id) {
+      try {
+        await getFirestore().collection('nchDevices').doc(id).update(clear);
+        revoked = true;
+      } catch (e) {
+        if (!/NOT_FOUND|No document to update/.test(String(e && (e.code || e.message)))) {
+          console.error('nchMuseRevoke device failed', String(e && e.message || e).slice(0, 120));
+        }
+      }
+    }
+    res.json({ ok: true, revoked });
   }
 );
 
@@ -1445,50 +1478,70 @@ exports.nchMuseJob = onRequest(
       return;
     }
     const db = getFirestore();
-    const ref = nchDoc(MUSE_TEST_EMAIL);
-    const snap = await ref.get();
-    const d = snap.exists ? snap.data() : null;
-    const paired = d && d.museEmail === MUSE_TEST_EMAIL
-      && typeof d.museCodeHash === 'string'
-      && typeof d.musePairedAt === 'number'
-      && Date.now() - d.musePairedAt < MUSE_PAIR_DAYS * 86400000;
-    // Locked out by too many bad codes: a fresh pairing (Allow Muse) is the way back in.
-    if (paired && (d.museFailed || 0) >= MUSE_MAX_FAILED) {
+    // A pairing can live in two places now. Check the account first (an account pairing covers
+    // every phone signed in as it), then this device. Muse sends no installId, so a device-only
+    // pairing is found by scanning nchDevices for a live museCodeHash and matching the code.
+    const pairFresh = (x) => x && typeof x.museCodeHash === 'string'
+      && typeof x.musePairedAt === 'number'
+      && Date.now() - x.musePairedAt < MUSE_PAIR_DAYS * 86400000;
+    const codeMatches = (stored) => {
+      const a = Buffer.from(museCodeHash(code));
+      const b = Buffer.from(stored);
+      return a.length === b.length && timingSafeEqual(a, b);
+    };
+
+    const accRef = nchDoc(MUSE_TEST_EMAIL);
+    const accSnap = await accRef.get();
+    const accData = accSnap.exists ? accSnap.data() : null;
+    let accPaired = pairFresh(accData);
+
+    // Which phones should receive offers, and which doc holds the pairing we matched.
+    let pairRef = null, pairData = null, phones = [];
+
+    if (accPaired && (accData.museFailed || 0) >= MUSE_MAX_FAILED) {
       res.status(429).json({ error: 'Pairing locked - tap Allow Muse again.' });
       return;
     }
-    // Constant-time compare; do not reveal which check failed.
-    let ok = false;
-    if (paired) {
-      const a = Buffer.from(museCodeHash(code));
-      const b = Buffer.from(d.museCodeHash);
-      ok = a.length === b.length && timingSafeEqual(a, b);
+    if (accPaired && codeMatches(accData.museCodeHash)) {
+      pairRef = accRef; pairData = accData;
+      const devs = await db.collection('nchDevices').where('account', '==', MUSE_TEST_EMAIL).limit(20).get();
+      phones = devs.docs.map(dd => ({ id: dd.id, data: dd.data() }));
+    } else {
+      // Fall back to a device pairing. Bounded scan: pairings are few and short-lived.
+      const devSnap = await db.collection('nchDevices').limit(500).get();
+      for (const dd of devSnap.docs) {
+        const x = dd.data();
+        if (!pairFresh(x)) continue;
+        if ((x.museFailed || 0) >= MUSE_MAX_FAILED) continue;
+        if (!codeMatches(x.museCodeHash)) continue;
+        pairRef = dd.ref; pairData = x;
+        phones = [{ id: dd.id, data: x }];
+        break;
+      }
     }
-    if (!ok) {
-      if (snap.exists) {
-        const failed = Math.min(MUSE_MAX_FAILED, (d.museFailed || 0) + 1);
-        await ref.set({ museFailed: failed }, { merge: true });
+
+    if (!pairRef) {
+      // Count the failure against whichever pairing exists, so bad codes cannot be probed freely.
+      if (accPaired) {
+        await accRef.set({ museFailed: Math.min(MUSE_MAX_FAILED, (accData.museFailed || 0) + 1) }, { merge: true });
       }
       res.status(401).json({ error: 'Not paired' });
       return;
     }
-    // Which phones are signed in as this account? Device-only offers are keyed per install id,
-    // so Muse fans out to every phone that registered the account. maxInstances/caps apply.
-    const devs = await db.collection('nchDevices').where('account', '==', MUSE_TEST_EMAIL).limit(20).get();
-    if (devs.empty) {
-      res.status(409).json({ error: 'No phone signed in to this account yet - open the app once.' });
+    if (!phones.length) {
+      res.status(409).json({ error: 'No phone registered yet - open the app once.' });
       return;
     }
     const now = Date.now();
-    let offered = 0, suggested = 0, phones = 0;
+    let offered = 0, suggested = 0, reached = 0;
     const jobs = [];
-    for (const dev of devs.docs) {
+    for (const dev of phones) {
       // parseEmailFuzzy matches on the name this phone registered.
-      const name = shareName(dev.data().name);
+      const name = shareName(dev.data.name);
       if (!name) continue;
       const r = parseEmailFuzzy(text, name, subject);
       if (!r.jobs) continue;
-      phones++;
+      reached++;
       for (const j of r.jobs) {
         if (!j.demob || !shareCore.isOfferable({ endDate: j.demob }, now)) continue;
         const jobNumber = j.vd || `${j.site || 'job'}-${j.mob}`;
@@ -1517,12 +1570,12 @@ exports.nchMuseJob = onRequest(
           jobs.push({ vd: j.vd || '', site: j.site || '', mob: j.mob, demob: j.demob });
         }
         // Same alert a P2P share sends. The offer is already stored; a failed alert changes nothing.
-        const pd = dev.data().push;
+        const pd = dev.data.push;
         if (pd) await sendOfferAlert(dev.id, pd, jobNumber, oid, j.matchKind, j.matchedName);
       }
     }
-    // A good call clears the bad-code counter.
-    if ((d.museFailed || 0) !== 0) await ref.set({ museFailed: 0 }, { merge: true });
-    res.json({ offered, suggested, phones, jobs });
+    // A good call clears the bad-code counter on whichever pairing matched.
+    if ((pairData.museFailed || 0) !== 0) await pairRef.set({ museFailed: 0 }, { merge: true });
+    res.json({ offered, suggested, phones: reached, scope: pairData.museScope || 'account', jobs });
   }
 );
