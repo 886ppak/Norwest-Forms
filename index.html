@@ -5568,7 +5568,8 @@ async function museScanNow(){
 async function musePairShare(){
   const p = musePairLoad();
   if(!p || !p.code){ showToast('No pairing yet - tap Allow Muse first.'); return; }
-  const onAccount = p.scope === 'account';
+  // Anything not explicitly stored as 'device' is an account pairing (older pairings have no scope).
+  const onAccount = p.scope !== 'device';
   const msg =
     'Norwest Forms Muse pairing (test)\n' +
     'Pairing code: ' + p.code + '\n' +
@@ -5617,8 +5618,8 @@ async function musePairRevoke(){
 }
 
 // The Muse rows in Profile. Shown for the test account, and for any phone that is signed out.
-// Unpaired: one primary "Allow Muse". Paired: the pairing send becomes secondary (it is a
-// one-off), and "Scan again now" takes over as the primary action.
+// Unpaired: one primary "Allow Muse". Once paired that button is REPLACED by "Scan again now";
+// the pairing send is only reachable from the small link, since it is a one-off.
 function museCardHtml(){
   if(!museCardVisible()) return '';
   const icon = '<img src="icons/muse-128.png" alt="" aria-hidden="true">';
@@ -5627,15 +5628,16 @@ function museCardHtml(){
     return '<div class="hint" style="padding:8px 4px 0">Allow Muse (test): lets Muse send parsed mobilisation emails to this phone as jobs to accept. Nothing is added until you accept.</div>'
       + '<button class="museBtn" onclick="musePairCreate()">' + icon + '<span>Allow Muse</span></button>';
   }
-  const where = (p.scope === 'account')
-    ? 'Muse is linked to your account (test), on every phone you sign in to.'
-    : 'Muse is linked to this phone (test).';
-  return '<div class="hint" style="padding:8px 4px 0">' + calEsc(where) + ' This pairing code is a password: share it only with Muse.</div>'
-    + '<div class="hint" style="padding:0 4px 10px; font-family:var(--mono); word-break:break-all; color:var(--ink); font-size:12px">' + calEsc(p.code) + '</div>'
-    // Primary: ask Muse to scan now.
+  // Older pairings were stored without a scope; treat anything not marked 'device' as the account.
+  const where = (p.scope === 'device')
+    ? 'Muse is linked to this phone (test).'
+    : 'Muse is linked to your account (test), on every phone you sign in to.';
+  return '<div class="hint" style="padding:8px 4px 0">' + calEsc(where) + '</div>'
+    // Primary (and only) action once paired.
     + '<button class="museBtn" onclick="museScanNow()">' + icon + '<span>Scan again now</span></button>'
-    // Secondary: re-send the pairing (one-off; useful if Muse lost the code or you paired a new agent).
-    + '<button class="museBtn secondary" onclick="musePairShare()">' + icon + '<span>Send pairing to Muse</span></button>'
+    + '<div class="hint" style="padding:2px 4px 8px">This pairing code is a password: share it only with Muse.<br>'
+    + '<span style="font-family:var(--mono); word-break:break-all; color:var(--ink); font-size:12px">' + calEsc(p.code) + '</span></div>'
+    + '<button class="acctRow" onclick="musePairShare()"><span>Send pairing to Muse again</span><span class="chev">&rsaquo;</span></button>'
     + '<button class="acctRow danger" onclick="musePairRevoke()"><span>Revoke Muse access</span></button>';
 }
 
