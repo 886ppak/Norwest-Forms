@@ -4155,6 +4155,7 @@ function calCells(text){
 // Build one job from the cells around the worker's name (index n).
 function calParseRow(cells, n){
   const warnings=[];
+  const conflicts=[];   // the raw cells behind a warning, for highlighting in the review
   // VD job number: the 5-digit cell just before the name (only in some layouts)
   let vdIdx=-1;
   for(let i=n-1;i>=Math.max(0,n-4);i--){ if(/^\d{5}$/.test(cells[i])){ vdIdx=i; break; } }
@@ -4190,6 +4191,12 @@ function calParseRow(cells, n){
   const travel = others.filter(t=>CAL_TRAVEL_RE.test(t));
   const accom = others.filter(t=>!CAL_TRAVEL_RE.test(t));
   const sdTextDate = sdTexts.map(t=>{ const m=/(\d{1,2}\/\d{1,2}\/(?:\d{4}|\d{2}))/.exec(t); return m?calIsoOf(m[1]):''; }).find(Boolean) || '';
+  // Guard A: an SD/FD day is a rest day inside the job, so its date must fall between MOB and DMOB.
+  const sdAny = sdDate || sdTextDate;
+  if(sdAny && mob && demob && (sdAny < mob || sdAny > demob)){
+    warnings.push('The SD/FD date is outside the job (MOB to DMOB). Check it.');
+    conflicts.push(...cells.slice(n, n+20).filter(c => c && (CAL_SDFD_RE.test(c) || calIsoOf(c) === sdAny)));
+  }
   if(!shift) warnings.push('Shift (DS / NS) not found');
   if(isoDates.length<4) warnings.push('Only '+isoDates.length+' dates found: check MOB, first shift, last shift and DMOB');
   if(first && last && first>last) warnings.push('First shift is after last shift');
@@ -4199,7 +4206,7 @@ function calParseRow(cells, n){
     vd, site, cls, commute, shift, mob, first, last, demob,
     sdDate: sdDate || sdTextDate, sdText: sdTexts.join(' '),
     travelIn: travel[0]||'', travelOut: travel[1]||'', accom: accom.join(' '),
-    hasTravel: travel.length>0 || !!commute, warnings
+    hasTravel: travel.length>0 || !!commute, warnings, conflicts
   };
 }
 // All job rows for this worker in the text. Returns {jobs} or {error}.
@@ -4434,7 +4441,14 @@ function calRead(subject, fromShare){
   // something could not be read (a missing date, no shift, dates out of order).
   const clean = out.jobs.every(j => !j.warnings.length && j.shift && j.mob && j.first && j.last && j.demob);
   const recvMs = calEmailDateMs(text);
-  out.jobs.forEach(j => { j.recvMs = recvMs; });
+  out.jobs.forEach(j => {
+    j.recvMs = recvMs;
+    // Kept so a flagged job can be logged: what the parser said, and what the person saved.
+    j.orig = {mob:j.mob||'', first:j.first||'', last:j.last||'', demob:j.demob||'', shift:j.shift||'', sd:j.sdDate||'', sdText:j.sdText||'', vd:j.vd||'', site:j.site||''};
+    j.flags = (j.warnings || []).slice();
+    j.marks = (j.conflicts || []).slice(0, 20);
+    j.emailText = text;
+  });
   if(clean){ calAddJobs(out.jobs); return; }
   calPending = out.jobs;
   pre.innerHTML = `<div class="calWarn">Some details could not be read. Check them, then save.</div>`
@@ -4522,8 +4536,31 @@ function calAddJobs(jobs){
   const what = jobs.map(j => (j.vd ? 'VD ' + j.vd : (j.site || 'Job')) + ' (' + calFmt(j.mob) + (j.demob !== j.mob ? ' to ' + calFmt(j.demob) : '') + ')').join(', ');
   showToast('Added to your calendar: ' + what);
 }
+// Best-effort redaction before a flagged email is logged: the person's own name, the crew name on each row
+// that has an RH card, phone numbers, emails and card numbers. Dates and layout are kept so it can be read.
+function calRedactEmail(text){
+  let t = String(text || '');
+  const own = calName();
+  if(own && own.length > 2) t = t.split(own).join('[NAME]');
+  t = t.replace(/\bRH\s?\d{4,}\b/gi, '[CARD]');
+  t = t.replace(/([A-Za-z][A-Za-z'.-]*(?: [A-Za-z][A-Za-z'.-]*){0,3})(\s{2,}|\t+)\s*\[CARD\]/g, '[NAME]$2[CARD]');
+  t = t.replace(/\+?61[\s-]?\d{1,3}[\s-]?\d{3}[\s-]?\d{3,4}|\b0\d[\s-]?\d{4}[\s-]?\d{4}\b|\b04\d{2}[\s-]?\d{3}[\s-]?\d{3}\b/g, '[PHONE]');
+  t = t.replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '[EMAIL]');
+  return t.slice(0, 60000);
+}
+
+// Send one flagged job to the review log: what the parser read, and what was saved. No names, no email text.
+function calReviewLog(entry){
+  try{
+    const id = installId();
+    if(!id) return;
+    fetch(NCH_API + '/nchParseReview', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(Object.assign({installId: id, via: calImportVia}, entry))}).catch(()=>{});
+  }catch(e){}
+}
 function calSaveAll(){
   if(!calPending) return;
+  const pend = calPending;
   const pre = document.getElementById('calPreview');
   const fail = msg => pre.insertAdjacentHTML('afterbegin', `<div class="calErr">${calEsc(msg)}</div>`);
   const rows=[];
@@ -4536,19 +4573,35 @@ function calSaveAll(){
     if(!mob||!first||!last||!demob){ fail(`Job ${k+1}: MOB, first shift, last shift and DMOB need dates in dd/mm/yyyy.`); return; }
     if(sdRaw && !sd){ fail(`Job ${k+1}: SD/FD date must be dd/mm/yyyy or blank.`); return; }
     if(first>last || mob>first || last>demob){ fail(`Job ${k+1}: dates are out of order (MOB, first, last, DMOB).`); return; }
+    const sdText = g('sdText');
     rows.push({vd:g('vd'), site:g('site'), cls:g('cls'), commute:g('commute').toUpperCase(), shift,
-      mob, first, last, demob, sd:{date:sd, text:g('sdText')},
+      mob, first, last, demob, sd:{date:sd, text:sdText}, sdDate: sd, sdText,
       travelIn:g('travelIn'), travelOut:g('travelOut'), accom:g('accom')});
   }
-  for(const r of rows){
-    if(!calUpsert(r)){ fail('Could not save: this phone is out of storage space.'); return; }
+  const batchVds = new Set(), placed = {added:0, replaced:0, same:0, older:0, declined:0};
+  for(let k=0;k<rows.length;k++){
+    const r0 = rows[k];
+    const row = {vd:r0.vd, site:r0.site, cls:r0.cls, commute:r0.commute, shift:r0.shift, mob:r0.mob, first:r0.first, last:r0.last,
+      demob:r0.demob, sd:r0.sd, travelIn:r0.travelIn, travelOut:r0.travelOut, accom:r0.accom,
+      emailRow: calEmailRow(r0), recv: typeof pend[k].recvMs === 'number' ? pend[k].recvMs : null};
+    const res = calPlace(row, batchVds);
+    if(res === 'nospace'){ fail('Could not save: this phone is out of storage space.'); return; }
+    placed[res] = (placed[res] || 0) + 1;
+    if(pend[k].flags && pend[k].flags.length && pend[k].orig){
+      const f = {mob:r0.mob, first:r0.first, last:r0.last, demob:r0.demob, shift:r0.shift, sd:sd, sdText:sdText, vd:r0.vd, site:r0.site};
+      const changed = Object.keys(f).some(key => (pend[k].orig[key]||'') !== (f[key]||''));
+      calReviewLog({reasons: pend[k].flags.slice(0,6), orig: pend[k].orig, final: f, accepted: changed ? 'corrected' : 'as read',
+        emailText: calRedactEmail(pend[k].emailText || ''), marks: (pend[k].marks || []).slice(0, 20)});
+    }
   }
   calPending=null; pre.innerHTML=''; document.getElementById('calPaste').value='';
   try{ localStorage.removeItem('norwestCalPending'); }catch(e){}
+  const saved = placed.added + placed.replaced;
+  if(!saved){ calRefresh(); showToast('Nothing changed on your calendar: it already has these dates or newer ones.'); return; }
   calView = {y:+rows[0].mob.slice(0,4), m:+rows[0].mob.slice(5,7)};
   calRefresh();
-  logCalImport(rows.length, calImportVia);
-  showToast('Saved '+rows.length+' job'+(rows.length>1?'s':'')+' to the calendar');
+  logCalImport(saved, calImportVia);
+  showToast('Saved '+saved+' job'+(saved>1?'s':'')+' to the calendar');
 }
 
 // ----- calendar -----

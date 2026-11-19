@@ -36,6 +36,7 @@ function calCells(text){
 // Build one job from the cells around the worker's name (index n).
 function calParseRow(cells, n){
   const warnings=[];
+  const conflicts=[];   // the raw cells behind a warning, for highlighting in the review
   // VD job number: the 5-digit cell just before the name (only in some layouts)
   let vdIdx=-1;
   for(let i=n-1;i>=Math.max(0,n-4);i--){ if(/^\d{5}$/.test(cells[i])){ vdIdx=i; break; } }
@@ -71,6 +72,12 @@ function calParseRow(cells, n){
   const travel = others.filter(t=>CAL_TRAVEL_RE.test(t));
   const accom = others.filter(t=>!CAL_TRAVEL_RE.test(t));
   const sdTextDate = sdTexts.map(t=>{ const m=/(\d{1,2}\/\d{1,2}\/(?:\d{4}|\d{2}))/.exec(t); return m?calIsoOf(m[1]):''; }).find(Boolean) || '';
+  // Guard A: an SD/FD day is a rest day inside the job, so its date must fall between MOB and DMOB.
+  const sdAny = sdDate || sdTextDate;
+  if(sdAny && mob && demob && (sdAny < mob || sdAny > demob)){
+    warnings.push('The SD/FD date is outside the job (MOB to DMOB). Check it.');
+    conflicts.push(...cells.slice(n, n+20).filter(c => c && (CAL_SDFD_RE.test(c) || calIsoOf(c) === sdAny)));
+  }
   if(!shift) warnings.push('Shift (DS / NS) not found');
   if(isoDates.length<4) warnings.push('Only '+isoDates.length+' dates found: check MOB, first shift, last shift and DMOB');
   if(first && last && first>last) warnings.push('First shift is after last shift');
@@ -80,7 +87,7 @@ function calParseRow(cells, n){
     vd, site, cls, commute, shift, mob, first, last, demob,
     sdDate: sdDate || sdTextDate, sdText: sdTexts.join(' '),
     travelIn: travel[0]||'', travelOut: travel[1]||'', accom: accom.join(' '),
-    hasTravel: travel.length>0 || !!commute, warnings
+    hasTravel: travel.length>0 || !!commute, warnings, conflicts
   };
 }
 // All job rows for this worker in the text. Returns {jobs} or {error}.
@@ -99,49 +106,5 @@ function calParseEmail(text, name, subject){
   if(!jobs.length) return {error:'Your name wasn’t found as a job row in this text. Check the spelling under My name matches the email, then try again.'};
   return {jobs};
 }
-
-// Fuzzy version for job sharing: a cell counts as this worker's row when its name
-// scores at least SUGGEST_MIN against the profile name (see name-match.js).
-// Each job carries matchScore and matchKind ('match' | 'suggest').
-function calParseEmailFuzzy(text, name, subject){
-  const { nameScore, classify } = require('./name-match.js');
-  if(!calNorm(name)) return {error:'No name to match.'};
-  const cells = calCells(text);
-  const jobs=[];
-  cells.forEach((c,n)=>{
-    const s = nameScore(name, c);
-    const kind = classify(s);
-    if(!kind) return;
-    const j = calParseRow(cells,n);
-    if(!j.hasTravel || !j.shift) return;
-    j.site = j.site || subject || '';
-    jobs.push(Object.assign(j, {matchScore:s, matchKind:kind, matchedName:String(c).trim().slice(0,80)}));
-  });
-  if(!jobs.length) return {error:'No job rows match this name.'};
-  return {jobs};
-}
-
-// Every job row in the text, for the pool (v1.101): any cell that looks like a person's name and
-// has a travel/shift/date pattern beside it. Returns an array (possibly empty); never throws.
-function calNameLike(c){
-  const t = String(c||'').trim();
-  if(!/^[A-Za-z][A-Za-z'’.\- ]{2,60}$/.test(t)) return false;
-  const words = t.split(/\s+/).length;
-  if(words < 2 || words > 4) return false;
-  if(CAL_SHIFT_RE.test(t) || CAL_TRAVEL_RE.test(t) || /\b(operator|rigger|supervisor|tba|regards|please|crew|class|shift|demob|mobe|full name|travel in|travel out|first shift|last shift|rh card|accommodation|commute|site)\b/i.test(t)) return false;
-  return true;
-}
-function calParseAllRows(text, subject){
-  const cells = calCells(text);
-  const jobs = [];
-  cells.forEach((c,n)=>{
-    if(!calNameLike(c)) return;
-    const j = calParseRow(cells, n);
-    if(!j.hasTravel || !j.shift || !j.demob) return;
-    j.site = j.site || subject || '';
-    jobs.push(Object.assign(j, {crewName: String(c).trim().slice(0,80)}));
-  });
-  return jobs;
-}
 // ===== end parser =====
-module.exports = { calParseEmail, calParseEmailFuzzy, calParseAllRows, calParseRow, calIsoOf, calCells, calShiftBase };
+module.exports = { calParseEmail, calParseRow, calIsoOf, calCells, calShiftBase };

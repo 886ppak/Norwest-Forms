@@ -36,6 +36,7 @@ function calCells(text){
 // Build one job from the cells around the worker's name (index n).
 function calParseRow(cells, n){
   const warnings=[];
+  const conflicts=[];   // the raw cells behind a warning, for highlighting in the review
   // VD job number: the 5-digit cell just before the name (only in some layouts)
   let vdIdx=-1;
   for(let i=n-1;i>=Math.max(0,n-4);i--){ if(/^\d{5}$/.test(cells[i])){ vdIdx=i; break; } }
@@ -71,6 +72,12 @@ function calParseRow(cells, n){
   const travel = others.filter(t=>CAL_TRAVEL_RE.test(t));
   const accom = others.filter(t=>!CAL_TRAVEL_RE.test(t));
   const sdTextDate = sdTexts.map(t=>{ const m=/(\d{1,2}\/\d{1,2}\/(?:\d{4}|\d{2}))/.exec(t); return m?calIsoOf(m[1]):''; }).find(Boolean) || '';
+  // Guard A: an SD/FD day is a rest day inside the job, so its date must fall between MOB and DMOB.
+  const sdAny = sdDate || sdTextDate;
+  if(sdAny && mob && demob && (sdAny < mob || sdAny > demob)){
+    warnings.push('The SD/FD date is outside the job (MOB to DMOB). Check it.');
+    conflicts.push(...cells.slice(n, n+20).filter(c => c && (CAL_SDFD_RE.test(c) || calIsoOf(c) === sdAny)));
+  }
   if(!shift) warnings.push('Shift (DS / NS) not found');
   if(isoDates.length<4) warnings.push('Only '+isoDates.length+' dates found: check MOB, first shift, last shift and DMOB');
   if(first && last && first>last) warnings.push('First shift is after last shift');
@@ -80,7 +87,7 @@ function calParseRow(cells, n){
     vd, site, cls, commute, shift, mob, first, last, demob,
     sdDate: sdDate || sdTextDate, sdText: sdTexts.join(' '),
     travelIn: travel[0]||'', travelOut: travel[1]||'', accom: accom.join(' '),
-    hasTravel: travel.length>0 || !!commute, warnings
+    hasTravel: travel.length>0 || !!commute, warnings, conflicts
   };
 }
 // All job rows for this worker in the text. Returns {jobs} or {error}.

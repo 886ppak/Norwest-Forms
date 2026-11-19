@@ -1364,6 +1364,72 @@ exports.nchAlertsAdmin = onRequest(
   }
 );
 
+// A flagged parse, logged so the parser can be refined. Minimal fields only: no names, no email text.
+// Kept 90 days. Written only through the Admin SDK, so the rules keep clients out.
+exports.nchParseReview = onRequest(
+  { region: REGION, invoker: 'public', maxInstances: 3 },
+  async (req, res) => {
+    if (nchCors(req, res)) return;
+    if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
+    const b = req.body || {};
+    const id = shareId(b.installId);
+    const str = (v, n) => String(v == null ? '' : v).slice(0, n);
+    const pick = o => (o && typeof o === 'object') ? {
+      mob: str(o.mob, 12), first: str(o.first, 12), last: str(o.last, 12), demob: str(o.demob, 12), shift: str(o.shift, 4),
+      sd: str(o.sd, 12), sdText: str(o.sdText, 200), vd: str(o.vd, 20), site: str(o.site, 40) } : null;
+    const orig = pick(b.orig), fin = pick(b.final);
+    // Second pass on the server (phones, emails, card numbers). The phone already removed names.
+    const email = str(b.emailText, 60000).replace(/\bRH\s?\d{4,}\b/gi, '[CARD]')
+      .replace(/\+?61[\s-]?\d{1,3}[\s-]?\d{3}[\s-]?\d{3,4}|\b0\d[\s-]?\d{4}[\s-]?\d{4}\b|\b04\d{2}[\s-]?\d{3}[\s-]?\d{3}\b/g, '[PHONE]')
+      .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '[EMAIL]');
+    const marks = Array.isArray(b.marks) ? b.marks.slice(0, 20).map(m => str(m, 200)).filter(Boolean) : [];
+    const reasons = Array.isArray(b.reasons) ? b.reasons.slice(0, 6).map(r => str(r, 200)) : [];
+    if (!id || !orig || !fin || !reasons.length) { res.status(400).json({ error: 'Bad request' }); return; }
+    const changed = Object.keys(fin).filter(k => fin[k] !== orig[k]);
+    await getFirestore().collection('parseReview').add({
+      at: Timestamp.fromMillis(Date.now()), expireAt: Timestamp.fromMillis(Date.now() + 90 * 86400000),
+      phone: createHash('sha1').update(id).digest('hex').slice(0, 12),
+      via: b.via === 'share' ? 'share' : 'paste', reasons, orig, final: fin, changed, text: email, marks,
+      status: changed.length ? 'corrected' : 'as read',
+    });
+    res.json({ ok: true });
+  }
+);
+
+// Owner-only: flagged parses from the last 60 days, newest first.
+exports.nchParseReviewAdmin = onRequest(
+  { region: REGION, invoker: 'public', maxInstances: 3 },
+  async (req, res) => {
+    const origin = new URL(ADMIN_PAGE_URL.value()).origin;
+    res.set('Access-Control-Allow-Origin', origin);
+    res.set('Vary', 'Origin');
+    if (req.method === 'OPTIONS') {
+      res.set('Access-Control-Allow-Methods', 'GET');
+      res.set('Access-Control-Allow-Headers', 'Authorization');
+      res.set('Access-Control-Max-Age', '3600');
+      res.status(204).send('');
+      return;
+    }
+    if (req.method !== 'GET') { res.status(405).send('Method Not Allowed'); return; }
+    const auth = String(req.get('Authorization') || '');
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+    if (!token) { res.status(401).json({ error: 'Sign in first' }); return; }
+    let email;
+    try {
+      email = String((await getAuth().verifyIdToken(token)).email || '').toLowerCase();
+    } catch (e) { res.status(401).json({ error: 'Sign in again' }); return; }
+    if (!ADMIN_EMAILS.includes(email)) { res.status(403).json({ error: 'Not an admin account' }); return; }
+    const since = Timestamp.fromMillis(Date.now() - 60 * 86400000);
+    const snap = await getFirestore().collection('parseReview').where('at', '>=', since).orderBy('at', 'desc').limit(300).get();
+    const rows = snap.docs.map(d => {
+      const x = d.data();
+      return { at: x.at && x.at.toMillis ? x.at.toMillis() : 0, via: x.via, phone: x.phone, reasons: x.reasons || [],
+        orig: x.orig || {}, final: x.final || {}, changed: x.changed || [], status: x.status, text: x.text || '', marks: x.marks || [] };
+    });
+    res.json({ rows });
+  }
+);
+
 // Owner-only: each Muse job's date history per person, with the email's received time.
 exports.nchMuseHistory = onRequest(
   { region: REGION, invoker: 'public', maxInstances: 3 },

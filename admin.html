@@ -167,6 +167,10 @@
     </div>
 
     <div class="card">
+      <h2>Parser review <span class="sub">flagged jobs, last 60 days</span></h2>
+      <div id="parseReview" class="muted">Loading…</div>
+    </div>
+    <div class="card">
       <h2>Muse job dates <span class="sub">each version, with when the email was received</span></h2>
       <div id="museHist" class="muted">Loading…</div>
     </div>
@@ -445,6 +449,7 @@ function start(user) {
   loadArchive(user);
   loadAlerts(user);
   museHistLoad(user);
+  parseReviewLoad(user);
 }
 
 // Who has job alerts on, for the red installed square. Fails quietly: squares just stay green.
@@ -468,6 +473,43 @@ function museHistHtml(jobs){
       + '<th align="left">Email received</th><th align="left">MOB</th><th align="left">First</th><th align="left">Last</th><th align="left">Demob</th><th align="left">Shift</th><th align="left">Changed</th>'
       + '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
   }).join('');
+}
+const NCH_PARSE_REVIEW_FN = useEmu
+  ? 'http://127.0.0.1:5001/demo-norwest/australia-southeast1/nchParseReviewAdmin'
+  : 'https://australia-southeast1-norwest-forms.cloudfunctions.net/nchParseReviewAdmin';
+function markedText(text, marks){
+  let h = hEsc(text || '');
+  (marks || []).filter(Boolean).sort((a, b) => b.length - a.length).forEach(m => {
+    const e = hEsc(m);
+    if(e.length > 1) h = h.split(e).join('<mark style="background:#f2c14e; color:#1c2530; border-radius:3px">' + e + '</mark>');
+  });
+  return h;
+}
+function parseReviewHtml(rows){
+  if(!rows.length) return 'Nothing flagged yet.';
+  return '<table style="width:100%; border-collapse:collapse; font-size:12px"><thead><tr>'
+    + '<th align="left">When</th><th align="left">Via</th><th align="left">Why flagged</th><th align="left">Read</th><th align="left">Saved</th><th align="left">Result</th>'
+    + '</tr></thead><tbody>' + rows.map(r => {
+      const f = k => (k === 'sd' ? (r.final.sd ? hDate(r.final.sd) : '—') : (r.final[k] ? hDate(r.final[k]) : '—'));
+      const o = k => (k === 'sd' ? (r.orig.sd ? hDate(r.orig.sd) : '—') : (r.orig[k] ? hDate(r.orig[k]) : '—'));
+      const line = (get) => 'MOB ' + get('mob') + ' · first ' + get('first') + ' · last ' + get('last') + ' · demob ' + get('demob') + ' · SD/FD ' + get('sd') + (r.orig.sdText ? ' (' + hEsc(r.orig.sdText) + ')' : '');
+      const read = 'VD ' + hEsc(r.orig.vd || '') + ' · ' + line(o);
+      const saved = 'VD ' + hEsc(r.final.vd || '') + ' · ' + line(f);
+      return '<tr><td>' + hEsc(fmtPerth(new Date(r.at))) + '</td><td>' + hEsc(r.via) + '</td><td>' + hEsc(r.reasons.join(' / ')) + '</td><td>' + read + '</td><td>' + saved + '</td><td>' + hEsc(r.status) + (r.changed.length ? ' (' + hEsc(r.changed.join(', ')) + ')' : '') + '</td></tr>'
+        + '<tr><td colspan="6" style="padding-bottom:12px"><details><summary style="cursor:pointer">Show the email (names removed)</summary>'
+        + '<pre style="white-space:pre-wrap; font-size:11.5px; line-height:1.45; background:#f7f5ef; border:1px solid #d9d5ca; border-radius:8px; padding:10px; margin:8px 0 0">' + (r.text ? markedText(r.text, r.marks) : 'No email text was saved for this one.') + '</pre></details></td></tr>';
+    }).join('') + '</tbody></table>';
+}
+async function parseReviewLoad(user) {
+  try {
+    const token = await user.getIdToken();
+    const r = await fetch(NCH_PARSE_REVIEW_FN, { headers: { Authorization: 'Bearer ' + token }, cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    $('parseReview').innerHTML = parseReviewHtml(Array.isArray(j.rows) ? j.rows : []);
+  } catch (e) {
+    $('parseReview').textContent = 'Could not load the parser review.';
+  }
 }
 async function museHistLoad(user) {
   try {
