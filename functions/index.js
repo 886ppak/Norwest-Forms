@@ -1108,11 +1108,19 @@ exports.nchDeviceTouch = onRequest(
     const id = shareId((req.body || {}).installId);
     const name = shareName((req.body || {}).name);
     if (!id || !name) { res.status(400).json({ error: 'Bad request' }); return; }
+    // Which account this phone is signed in as (optional). Lets account-scoped features reach
+    // every phone of an account without changing the device-keyed offer path. '' = signed out.
+    const account = String((req.body || {}).account || '').trim().toLowerCase().slice(0, 120);
+    if (account && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(account)) { res.status(400).json({ error: 'Bad request' }); return; }
     const db = getFirestore();
     const ref = db.collection('nchDevices').doc(id);
     const before = await ref.get();
     const now = Date.now();
-    await ref.set({ name, lastOpenedMs: now }, { merge: true });
+    // Only set `account` when the phone sent one: a signed-out phone must not clear it by
+    // accident, and an empty string is not a valid value to store.
+    const touch = { name, lastOpenedMs: now };
+    if (account) touch.account = account;
+    await ref.set(touch, { merge: true });
     // New phone, or the name changed: check the pool for jobs shared before this phone registered (v1.101).
     if (!before.exists || (before.data() || {}).poolName !== name) {
       try {
@@ -1350,15 +1358,19 @@ exports.nchAlertsAdmin = onRequest(
 );
 
 // ===== Allow Muse (TEST ONLY, Aiden only) =====
-// Muse is given a pairing code once, in chat. The server stores only its SHA-256 hex here on
-// nchDevices/{installId}:
+// Muse is given a pairing code once, in chat. The server stores only its SHA-256 hex, and it
+// lives on the ACCOUNT (nchUsers/{email}), not on one phone:
 //   museCodeHash: string    SHA-256 hex of the pairing code (never the plain code)
 //   museEmail:    string    the test account this pairing belongs to
 //   musePairedAt: number    epoch ms; the pairing expires MUSE_PAIR_DAYS later
 //   museFailed:   number    failed nchMuseJob attempts since the last success
-// Revoke deletes all four. Muse creates PENDING sharedJobs offers, exactly like nchJobShare,
-// so the phone's offersSync / Accept / nchOfferAnswer path is unchanged. Nothing Muse sends
-// can reach the calendar without Aiden tapping Accept.
+// Revoke deletes all four. Pairing once covers every phone signed in as that account; phones
+// report their account on nchDevices/{installId}.account via nchDeviceTouch.
+// Muse creates PENDING sharedJobs offers, exactly like nchJobShare, so the phone's offersSync /
+// Accept / nchOfferAnswer path is unchanged. Nothing Muse sends can reach the calendar without
+// Aiden tapping Accept.
+// NOTE: nchUsers/{email} also carries { stores, email, updatedAt }; every write here uses
+// merge:true so calendar sync (nchCalendarPut) and pairing never overwrite each other.
 // Keep MUSE_TEST_EMAIL in step with MUSE_TEST_EMAIL in index.html.
 const MUSE_TEST_EMAIL = 'aiden.tunupopo@gmail.com';
 const MUSE_PAIR_DAYS = 90;
@@ -1372,7 +1384,7 @@ function museCodeOk(v) {
   return typeof v === 'string' && /^[A-Za-z0-9_-]{20,64}$/.test(v);
 }
 
-// Register (or replace) the pairing hash. Authed: must be signed in as the test account.
+// Register (or replace) the pairing hash on the account. Authed: must be signed in as the test account.
 exports.nchMusePair = onRequest(
   { region: REGION, invoker: 'public', maxInstances: 5, secrets: [NCH_SESSION_SECRET] },
   async (req, res) => {
@@ -1380,24 +1392,20 @@ exports.nchMusePair = onRequest(
     if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
     const email = nchEmailFrom(req);
     if (email !== MUSE_TEST_EMAIL) { res.status(401).json({ error: 'Sign in again.' }); return; }
-    const body = req.body || {};
-    const id = shareId(body.installId);
-    const hash = body.codeHash;
-    if (!id || typeof hash !== 'string' || !/^[0-9a-f]{64}$/.test(hash)) {
+    const hash = (req.body || {}).codeHash;
+    if (typeof hash !== 'string' || !/^[0-9a-f]{64}$/.test(hash)) {
       res.status(400).json({ error: 'Bad request' });
       return;
     }
-    // Build the write with no undefined values: the Admin SDK throws on undefined.
-    // The name is optional here (the phone registers it via nchDeviceTouch).
-    const write = { museCodeHash: hash, museEmail: MUSE_TEST_EMAIL, musePairedAt: Date.now(), museFailed: 0 };
-    const name = shareName(body.name);
-    if (name) write.name = name;
-    await getFirestore().collection('nchDevices').doc(id).set(write, { merge: true });
+    // No undefined values: the Admin SDK throws on undefined. merge:true keeps `stores` intact.
+    await nchDoc(MUSE_TEST_EMAIL).set(
+      { museCodeHash: hash, museEmail: MUSE_TEST_EMAIL, musePairedAt: Date.now(), museFailed: 0 },
+      { merge: true });
     res.json({ ok: true });
   }
 );
 
-// Revoke the pairing. Authed: must be signed in as the test account.
+// Revoke the pairing on the account: every phone signed in as it stops receiving Muse jobs.
 exports.nchMuseRevoke = onRequest(
   { region: REGION, invoker: 'public', maxInstances: 5, secrets: [NCH_SESSION_SECRET] },
   async (req, res) => {
@@ -1405,11 +1413,9 @@ exports.nchMuseRevoke = onRequest(
     if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
     const email = nchEmailFrom(req);
     if (email !== MUSE_TEST_EMAIL) { res.status(401).json({ error: 'Sign in again.' }); return; }
-    const id = shareId((req.body || {}).installId);
-    if (!id) { res.status(400).json({ error: 'Bad request' }); return; }
     try {
-      // update(), not set(): a revoke for an unknown phone must not create an empty document.
-      await getFirestore().collection('nchDevices').doc(id).update({
+      // update(), not set(): revoking an account with no document must not create one.
+      await nchDoc(MUSE_TEST_EMAIL).update({
         museCodeHash: FieldValue.delete(), museEmail: FieldValue.delete(),
         musePairedAt: FieldValue.delete(), museFailed: FieldValue.delete(),
       });
@@ -1423,24 +1429,23 @@ exports.nchMuseRevoke = onRequest(
 );
 
 // Muse sends one mobilisation email. No session token: the pairing code is the credential.
-// Body: { installId, code, emailText, subject? }
-// Returns: { offered, suggested, jobs: [{ vd, site, mob, demob }] } - never the email text.
+// Body: { code, emailText, subject? }   (no installId - the pairing is on the account)
+// Returns: { offered, suggested, phones, jobs: [{ vd, site, mob, demob }] } - never the email text.
 exports.nchMuseJob = onRequest(
   { region: REGION, invoker: 'public', maxInstances: 5, timeoutSeconds: 60, secrets: [VAPID_PRIVATE] },
   async (req, res) => {
     if (nchCors(req, res)) return;
     if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
     const body = req.body || {};
-    const id = shareId(body.installId);
     const code = body.code;
     const text = typeof body.emailText === 'string' ? body.emailText : '';
     const subject = String(body.subject || '').slice(0, 200);
-    if (!id || !museCodeOk(code) || !text || text.length > 300000) {
+    if (!museCodeOk(code) || !text || text.length > 300000) {
       res.status(400).json({ error: 'Bad request' });
       return;
     }
     const db = getFirestore();
-    const ref = db.collection('nchDevices').doc(id);
+    const ref = nchDoc(MUSE_TEST_EMAIL);
     const snap = await ref.get();
     const d = snap.exists ? snap.data() : null;
     const paired = d && d.museEmail === MUSE_TEST_EMAIL
@@ -1467,45 +1472,57 @@ exports.nchMuseJob = onRequest(
       res.status(401).json({ error: 'Not paired' });
       return;
     }
-    // parseEmailFuzzy matches on the name this phone registered.
-    const name = shareName(d.name);
-    if (!name) { res.status(400).json({ error: 'No name on this phone yet - open the app once first.' }); return; }
-    const now = Date.now();
-    const r = parseEmailFuzzy(text, name, subject);
-    if (!r.jobs) { res.status(400).json({ error: 'No job rows match this name.' }); return; }
-    let offered = 0, suggested = 0;
-    const jobs = [];
-    for (const j of r.jobs) {
-      if (!j.demob || !shareCore.isOfferable({ endDate: j.demob }, now)) continue;
-      const jobNumber = j.vd || `${j.site || 'job'}-${j.mob}`;
-      const oid = shareCore.offerId(jobNumber, id);
-      const oref = db.collection('sharedJobs').doc(oid);
-      const written = await db.runTransaction(async (tx) => {
-        const cur = await tx.get(oref);
-        // Already accepted or dismissed: leave it alone.
-        if (cur.exists && cur.data().status !== 'pending') return false;
-        tx.set(oref, {
-          jobNumber, vd: j.vd || '', site: j.site || '', cls: j.cls || '', shift: j.shift || '',
-          mob: j.mob, first: j.first || '', last: j.last || '', demob: j.demob,
-          sdDate: j.sdDate || '', sdText: j.sdText || '',
-          travelIn: j.travelIn || '', travelOut: j.travelOut || '', accom: j.accom || '',
-          matchKind: j.matchKind, matchedName: j.matchedName || '',
-          targetInstallId: id, status: 'pending', source: 'muse',
-          cutoffMs: shareCore.cutoffMs(j.demob),
-          expireAt: Timestamp.fromMillis(shareCore.poolExpiryMs(j.demob)),
-          createdAt: FieldValue.serverTimestamp(),
-        });
-        return true;
-      });
-      if (!written) continue;
-      if (j.matchKind === 'suggest') suggested++; else offered++;
-      jobs.push({ vd: j.vd || '', site: j.site || '', mob: j.mob, demob: j.demob });
-      // Same alert a P2P share sends. The offer is already stored; a failed alert changes nothing.
-      if (d.push) await sendOfferAlert(id, d.push, jobNumber, oid, j.matchKind, j.matchedName);
+    // Which phones are signed in as this account? Device-only offers are keyed per install id,
+    // so Muse fans out to every phone that registered the account. maxInstances/caps apply.
+    const devs = await db.collection('nchDevices').where('account', '==', MUSE_TEST_EMAIL).limit(20).get();
+    if (devs.empty) {
+      res.status(409).json({ error: 'No phone signed in to this account yet - open the app once.' });
+      return;
     }
-    // A good call clears the bad-code counter. lastOpenedMs is NOT touched: that field means
-    // "the phone opened the app", and drives the 60-day idle cleanup.
+    const now = Date.now();
+    let offered = 0, suggested = 0, phones = 0;
+    const jobs = [];
+    for (const dev of devs.docs) {
+      // parseEmailFuzzy matches on the name this phone registered.
+      const name = shareName(dev.data().name);
+      if (!name) continue;
+      const r = parseEmailFuzzy(text, name, subject);
+      if (!r.jobs) continue;
+      phones++;
+      for (const j of r.jobs) {
+        if (!j.demob || !shareCore.isOfferable({ endDate: j.demob }, now)) continue;
+        const jobNumber = j.vd || `${j.site || 'job'}-${j.mob}`;
+        const oid = shareCore.offerId(jobNumber, dev.id);
+        const oref = db.collection('sharedJobs').doc(oid);
+        const written = await db.runTransaction(async (tx) => {
+          const cur = await tx.get(oref);
+          // Already accepted or dismissed: leave it alone.
+          if (cur.exists && cur.data().status !== 'pending') return false;
+          tx.set(oref, {
+            jobNumber, vd: j.vd || '', site: j.site || '', cls: j.cls || '', shift: j.shift || '',
+            mob: j.mob, first: j.first || '', last: j.last || '', demob: j.demob,
+            sdDate: j.sdDate || '', sdText: j.sdText || '',
+            travelIn: j.travelIn || '', travelOut: j.travelOut || '', accom: j.accom || '',
+            matchKind: j.matchKind, matchedName: j.matchedName || '',
+            targetInstallId: dev.id, status: 'pending', source: 'muse',
+            cutoffMs: shareCore.cutoffMs(j.demob),
+            expireAt: Timestamp.fromMillis(shareCore.poolExpiryMs(j.demob)),
+            createdAt: FieldValue.serverTimestamp(),
+          });
+          return true;
+        });
+        if (!written) continue;
+        if (j.matchKind === 'suggest') suggested++; else offered++;
+        if (!jobs.some(x => x.vd === (j.vd || '') && x.demob === j.demob)) {
+          jobs.push({ vd: j.vd || '', site: j.site || '', mob: j.mob, demob: j.demob });
+        }
+        // Same alert a P2P share sends. The offer is already stored; a failed alert changes nothing.
+        const pd = dev.data().push;
+        if (pd) await sendOfferAlert(dev.id, pd, jobNumber, oid, j.matchKind, j.matchedName);
+      }
+    }
+    // A good call clears the bad-code counter.
     if ((d.museFailed || 0) !== 0) await ref.set({ museFailed: 0 }, { merge: true });
-    res.json({ offered, suggested, jobs });
+    res.json({ offered, suggested, phones, jobs });
   }
 );
