@@ -5508,6 +5508,28 @@ async function musePairCreate(){
   }catch(e){ showToast('Could not reach the pairing server. Try again shortly.'); }
 }
 
+// Ask Muse to check Gmail now. Same handoff as the pairing message: the text is staged in the
+// share sheet and the person still taps Send in Muse. Nothing is sent from the app itself,
+// and the app cannot reach Muse on its own - there is no server-to-Muse call.
+async function museScanNow(){
+  if(!museIsTestUser()){ showToast('Sign in as Aiden first.'); return; }
+  const msg =
+    'Norwest Forms – scan now: Please check Gmail now for new Norwest mobilisation emails ' +
+    'from mobilisation@norwestcranehire.com.au and send any new ones as pending jobs for me to ' +
+    'Accept. Nothing is added until I tap Accept.';
+  if(navigator.share){
+    try{
+      await navigator.share({ title: 'Norwest Forms - scan now', text: msg });
+      return;
+    }catch(e){
+      // The person cancelled the share sheet: that is a cancel, not a failure.
+      if(e && e.name === 'AbortError') return;
+    }
+  }
+  try{ await navigator.clipboard.writeText(msg); showToast('Scan request copied - paste it into Muse.'); }
+  catch(_e){ showToast('Could not copy. Try again.'); }
+}
+
 // One-tap handoff: the message is staged in the share sheet - nothing is sent automatically.
 // No install id is sent to Muse: the pairing is on the account, so Muse only needs the code.
 async function musePairShare(){
@@ -5553,14 +5575,19 @@ async function musePairRevoke(){
 // The Muse rows in Profile. Returns '' for everyone except the test account.
 function museCardHtml(){
   if(!museIsTestUser()) return '';
+  // "Scan again now" sits under the Muse rows and is usable whether or not the account is paired:
+  // it only asks Muse to check Gmail, which is harmless before pairing and useful after.
+  const scanBtn = '<button class="acctRow" onclick="museScanNow()"><span>Scan again now</span><span class="chev">&rsaquo;</span></button>';
   const p = musePairLoad();
   if(!p){
     return '<div class="hint" style="padding:8px 4px 0">Allow Muse (test): lets Muse send parsed mobilisation emails to the phones signed in as your account, as jobs to accept. Only your account sees this.</div>'
-      + '<button class="acctRow" onclick="musePairCreate()"><span>Allow Muse</span><span class="chev">&rsaquo;</span></button>';
+      + '<button class="acctRow" onclick="musePairCreate()"><span>Allow Muse</span><span class="chev">&rsaquo;</span></button>'
+      + scanBtn;
   }
   return '<div class="hint" style="padding:8px 4px 0">Muse is linked to your account (test), on every phone you sign in to. This pairing code is a password: share it only with Muse.</div>'
     + '<div class="hint" style="padding:0 4px 8px; font-family:var(--mono); word-break:break-all; color:var(--ink); font-size:12px">' + calEsc(p.code) + '</div>'
     + '<button class="acctRow" onclick="musePairShare()"><span>Send pairing to Muse</span><span class="chev">&rsaquo;</span></button>'
+    + scanBtn
     + '<button class="acctRow danger" onclick="musePairRevoke()"><span>Revoke Muse access</span></button>';
 }
 
