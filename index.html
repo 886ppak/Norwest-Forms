@@ -731,6 +731,13 @@
 <div class="company-gate" id="companyGate" style="display:none; position:fixed; inset:0; background:var(--ink); z-index:999; align-items:center; justify-content:center; padding:24px;">
   <div style="max-width:360px; width:100%; text-align:center; color:#fff;">
     <div style="position:relative; display:inline-block; margin-bottom:18px;"><img src="./icons/icon-192.png" alt="" style="width:64px; height:64px; border-radius:14px; display:block;"><span style="position:absolute; left:50%; top:50%; transform:translate(-50%,-50%) rotate(-8deg); font:800 9px/1 system-ui,-apple-system,'Segoe UI',sans-serif; letter-spacing:.14em; color:#fff; background:rgba(180,35,24,.92); border:1.5px solid #fff; border-radius:4px; padding:3px 6px; white-space:nowrap; box-shadow:0 1px 3px rgba(0,0,0,.35); pointer-events:none;">NOT OFFICIAL</span></div>
+    <div style="text-align:left; background:#3a2a16; border:1.5px solid #f2c14e; border-radius:12px; padding:12px 14px; margin:0 0 18px;">
+      <span style="display:inline-block; font-size:10.5px; font-weight:800; letter-spacing:.12em; color:#1c2530; background:#f2c14e; border-radius:4px; padding:3px 7px; margin-bottom:8px;">COMMUNITY-BUILT</span>
+      <div style="font-size:15px; font-weight:700; margin:0 0 6px;">Made by crew, for crew</div>
+      <p style="font-size:12.5px; line-height:1.5; margin:0 0 8px; color:#f3e9d2;">Norwest Forms is an independent tool, not an official Norwest app.</p>
+      <p style="font-size:12.5px; line-height:1.5; margin:0 0 8px; color:#f3e9d2; display:flex; align-items:center; gap:8px;"><span aria-hidden="true" style="flex:none; width:24px; height:24px; border-radius:50%; background:#fff; color:#3a2a16; font:800 14px/24px system-ui,sans-serif; text-align:center;">?</span><span>Send any questions about the app to <b>Help</b> (the ? at the top of the screen).</span></p>
+      <p style="font-size:12.5px; line-height:1.5; margin:0; color:#f3e9d2;">Being a community app, it's outside official NCH support, so for app questions, the Help section is the best place to start.</p>
+    </div>
     <h2 style="margin:0 0 8px; font-size:19px;">Which company do you work for?</h2>
     <p style="color:#a7a196; font-size:13.5px; margin:0 0 22px;">This decides which timesheet and admin email you'll be using. You can switch anytime from the bottom of the page.</p>
     <button onclick="chooseCompany('NCH')" style="width:100%; padding:14px; margin-bottom:10px; border-radius:10px; border:none; background:var(--accent); color:#fff; text-align:left;">
@@ -741,7 +748,6 @@
       <div style="font-size:20px; font-weight:800; letter-spacing:.04em;">[NWP]</div>
       <div style="font-size:12.5px; font-weight:600; opacity:.9; margin-top:2px;">Norwest Personnel</div>
     </button>
-    <p style="color:#6b7280; font-size:10.5px; line-height:1.5; margin:18px 0 0;">This is an independently built tool and is not an official Norwest Crane Hire or Norwest Personnel system. It's provided as a convenience with no guarantee of accuracy — always follow your normal process if you're unsure, and contact your admin team with any questions.</p>
     <p style="color:#6b7280; font-size:10.5px; line-height:1.5; margin:8px 0 0;">Basic usage (which form, roughly how often, and how often the app and the calendar email import are used) is logged to help improve this tool. No names are attached to those counts.</p>
   </div>
 </div>
@@ -1393,6 +1399,26 @@ function renderTabs(){
 }
 function setDay(i){ activeDay=i; renderTabs(); renderDay(); }
 
+// Import from calendar: fills the job number and site on the first row only. Hours are never
+// touched, nothing is submitted, and it asks before overwriting. Owner-only test feature.
+const TS_IMPORT_EMAILS = ['myslewer@gmail.com'];
+function tsImportAllowed(){
+  try{ const s = nchSession(); return !!s && TS_IMPORT_EMAILS.includes(String(s.email || '').toLowerCase()); }catch(e){ return false; }
+}
+function tsImportFromCalendar(){
+  const d = state.days[activeDay];
+  const jobs = d.date ? calJobsForDate(d.date) : [];
+  if(!jobs.length){ showToast('No calendar job on this day.'); return; }
+  if(jobs.length > 1){ showToast('There are ' + jobs.length + ' calendar jobs on this day. Pick one from the Client list.'); return; }
+  if(!d.jobs.length){ showToast('Add a job row first.'); return; }
+  const cj = jobs[0], job = d.jobs[0];
+  if((job.client || job.no) && !confirm('Replace the job on the first row with ' + (cj.vd ? 'VD ' + cj.vd : (cj.site || 'this job')) + '?')) return;
+  job.calKey = calJobKey(cj); job.otherClient = false;
+  job.client = cj.site || ''; job.no = cj.vd || '';
+  renderDay(); renderTabs(); renderTotals(); scheduleDraftSave();
+  showToast(cj.vd ? 'Job number and site filled. Check your hours before you submit.' : 'Site filled, but this job has no VD number. Type it in.');
+}
+
 function copyFromPreviousDay(){
   if(activeDay===0) return;
   const keepDate = state.days[activeDay].date;
@@ -1412,6 +1438,9 @@ function renderDay(){
   `;
   if(activeDay>0){
     html += `<button class="addjob" style="margin-bottom:12px" onclick="copyFromPreviousDay()">↻ Copy ${DAYS[activeDay-1]}'s details</button>`;
+  }
+  if(tsImportAllowed() && d.date && calJobsForDate(d.date).length){
+    html += `<button class="addjob" style="margin-bottom:12px" onclick="tsImportFromCalendar()">⇩ Import from calendar</button>`;
   }
   html += `
     <div class="field"><label>Date <span style="font-weight:500; text-transform:none; font-size:10.5px">(set via Week Ending above)</span></label><input type="text" value="${d.date ? fmtDateDDMMYYYY(d.date) : ''}" readonly onclick="flashWeekEnding(); this.blur();" style="background:#f0ede5; color:var(--muted)"></div>
@@ -4404,6 +4433,8 @@ function calRead(subject, fromShare){
   // Read cleanly: straight onto the calendar. Only show the check screen when
   // something could not be read (a missing date, no shift, dates out of order).
   const clean = out.jobs.every(j => !j.warnings.length && j.shift && j.mob && j.first && j.last && j.demob);
+  const recvMs = calEmailDateMs(text);
+  out.jobs.forEach(j => { j.recvMs = recvMs; });
   if(clean){ calAddJobs(out.jobs); return; }
   calPending = out.jobs;
   pre.innerHTML = `<div class="calWarn">Some details could not be read. Check them, then save.</div>`
@@ -4420,12 +4451,57 @@ function calEmailRow(j){
     ['Travel In', j.travelIn || ''], ['Last Shift', j.last ? calFmt(j.last) : ''], ['SD/FD', sd],
     ['Demob', j.demob ? calFmt(j.demob) : ''], ['Travel Out', j.travelOut || ''], ['Accommodation', j.accom || '']];
 }
+// The date an email was sent, from its Sent: or Date: line. Null when the text has none (a paste).
+function calEmailDateMs(text){
+  const m = String(text || '').slice(0, 4000).match(/^\s*(?:Sent|Date)\s*:\s*(.+)$/im);
+  if(!m) return null;
+  let s = m[1].trim();
+  if(!/(GMT|UTC|Z\b|[+-]\d{4})/i.test(s)) s += ' +0800';
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : null;
+}
+function calSameRow(x, row){
+  return x.mob === row.mob && (x.first||'') === (row.first||'') && (x.last||'') === (row.last||'') && (x.demob||'') === (row.demob||'')
+    && (x.shift||'') === (row.shift||'') && ((x.sd && x.sd.date) || '') === ((row.sd && row.sd.date) || '');
+}
+// One job on the calendar, by VD. Newer versions replace; older ones are ignored; a paste with no date
+// asks first when its dates differ. Returns added | replaced | same | older | declined | nospace.
+function calPlace(row, batchVds){
+  if(!row.vd || batchVds.has(String(row.vd))) return calUpsert(row) ? 'added' : 'nospace';
+  batchVds.add(String(row.vd));
+  const list = calLoad();
+  const mine = list.filter(x => String(x.vd) === String(row.vd));
+  if(mine.some(x => calSameRow(x, row))) return 'same';
+  const stored = mine.reduce((m, x) => Math.max(m, typeof x.recv === 'number' ? x.recv : 0), 0);
+  if(row.recv != null && stored && row.recv < stored) return 'older';
+  if(row.recv == null && mine.length && !confirm('This email has different dates from the job already on your calendar (VD ' + row.vd + '). Replace it with these dates?')) return 'declined';
+  const rest = list.filter(x => String(x.vd) !== String(row.vd));
+  rest.push(row);
+  rest.sort((a,b)=>(a.mob||'').localeCompare(b.mob||''));
+  return calStore(rest) ? (mine.length ? 'replaced' : 'added') : 'nospace';
+}
 function calAddJobs(jobs){
+  const counts = {added:0, replaced:0, same:0, older:0, declined:0};
+  const batchVds = new Set();
   for(const j of jobs){
     const row = {vd:j.vd, site:j.site, cls:j.cls, commute:j.commute, shift:calShiftBase(j.shift),
       mob:j.mob, first:j.first, last:j.last, demob:j.demob, sd:{date:j.sdDate||'', text:j.sdText||''},
-      travelIn:j.travelIn, travelOut:j.travelOut, accom:j.accom, emailRow: calEmailRow(j)};
-    if(!calUpsert(row)){ showToast('Could not save: this phone is out of storage space.'); return; }
+      travelIn:j.travelIn, travelOut:j.travelOut, accom:j.accom, emailRow: calEmailRow(j),
+      recv: typeof j.recvMs === 'number' ? j.recvMs : null};
+    const r = calPlace(row, batchVds);
+    if(r === 'nospace'){ showToast('Could not save: this phone is out of storage space.'); return; }
+    counts[r] = (counts[r] || 0) + 1;
+  }
+  const placed = counts.added + counts.replaced;
+  if(!placed){
+    try{ localStorage.removeItem('norwestCalPending'); }catch(e){}
+    calPending = null;
+    document.getElementById('calPreview').innerHTML = '';
+    document.getElementById('calPaste').value = '';
+    showToast(counts.older ? 'That email is older than the job on your calendar, so nothing changed.'
+      : counts.declined ? 'Nothing replaced. Your calendar keeps its current dates.'
+      : 'That job is already on your calendar with the same dates.');
+    return;
   }
   try{ localStorage.removeItem('norwestCalPending'); }catch(e){}
   calPending = null;
@@ -4442,7 +4518,7 @@ function calAddJobs(jobs){
     if(card){ card.scrollIntoView({behavior:'smooth', block:'center'}); card.style.outline = '3px solid #e8622c'; setTimeout(() => { card.style.outline = ''; }, 3000); }
     else document.getElementById('calendarView').scrollIntoView({behavior:'smooth', block:'start'});
   }catch(e){ document.getElementById('calendarView').scrollIntoView({behavior:'smooth', block:'start'}); }
-  logCalImport(jobs.length, calImportVia);
+  logCalImport(placed, calImportVia);
   const what = jobs.map(j => (j.vd ? 'VD ' + j.vd : (j.site || 'Job')) + ' (' + calFmt(j.mob) + (j.demob !== j.mob ? ' to ' + calFmt(j.demob) : '') + ')').join(', ');
   showToast('Added to your calendar: ' + what);
 }
@@ -4638,6 +4714,18 @@ async function offersSync(force){
     const r = await fetch(NCH_API + '/nchOffersGet?installId=' + encodeURIComponent(id));
     if(!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
+    // Paste-only users: an offer that matches a job already on this calendar is dismissed quietly.
+    const localJobs = calLoad();
+    const onCalendar = (o) => localJobs.some(x => x.vd && o.vd && String(x.vd) === String(o.vd) && x.mob === o.mob
+      && (x.first || '') === (o.first || '') && (x.last || '') === (o.last || '') && (x.demob || '') === (o.demob || '')
+      && (x.shift || '') === calShiftBase(o.shift || '') && ((x.sd && x.sd.date) || '') === (o.sdDate || ''));
+    for(const o of (d.offers || [])){
+      if(onCalendar(o)){
+        fetch(NCH_API + '/nchOfferAnswer', {method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({installId: id, offerId: o.id, action: 'dismiss'})}).catch(()=>{});
+      }
+    }
+    d.offers = (d.offers || []).filter(o => !onCalendar(o));
     window.__lastAccepted = (d.accepted || []).length;
     const answered = new Set(offerQueueLoad().map(x => x.oid));
     offersSave((d.offers || []).filter(o => !answered.has(o.id)));
@@ -4680,6 +4768,9 @@ function offerBannerUpdate(list){
 }
 function offerBannerKey(list){ return list.map(o => o.id).sort().join(','); }
 function offerBannerRefresh(){ try{ offerBannerUpdate(offersLoad().filter(o => o.cutoffMs > Date.now())); }catch(e){} }
+const MUSE_LABEL = {site:'Site', cls:'Class', shift:'Shift', mob:'Mobe', first:'First shift', last:'Last shift',
+  demob:'Demob', sdDate:'SD/FD', sdText:'SD/FD note', travelIn:'Travel in', travelOut:'Travel out', accom:'Accommodation'};
+function offerFieldText(f, v){ if(!v) return '—'; return ['mob','first','last','demob','sdDate'].includes(f) ? calFmt(v) : v; }
 function offersRender(){
   const list = offersLoad().filter(o => o.cutoffMs > Date.now());
   // Number on the calendar icon, so a pending offer is visible without a box on the timesheet.
@@ -4719,6 +4810,17 @@ function offersRender(){
         const head = cells.map(c => '<th style="text-align:left; font-weight:700; padding:4px 6px; border-bottom:1px solid #d9d3c4; white-space:nowrap">' + calEsc(c[0]) + '</th>').join('');
         const body = cells.map(c => '<td style="padding:4px 6px; vertical-align:top">' + calEsc(c[1] || '') + '</td>').join('');
         const check = o.matchKind === 'suggest' ? '<div style="font-size:12px; color:#b8481c; font-weight:700; margin:6px 0">Is this you? Check the Name column against your own name.</div>' : '';
+        // A changed job shows only the lines that changed, with what they were and what they are now.
+        const detail = (o.kind === 'change' && Array.isArray(o.changes) && o.changes.length)
+          ? '<div style="font-size:12px; color:#b8481c; font-weight:700; margin:6px 0">Changed since you accepted this job</div>'
+            + '<div style="font-size:12px; margin-bottom:6px">VD ' + calEsc(o.vd || '') + ' · ' + calEsc(o.site || '') + '</div>'
+            + (o.receivedMs ? '<div style="font-size:12px; color:var(--muted); margin-bottom:6px">Email received ' + calEsc(new Date(o.receivedMs).toLocaleString('en-AU', {timeZone:'Australia/Perth', weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'})) + '</div>' : '')
+            + '<div style="overflow-x:auto"><table style="border-collapse:collapse; font-size:12px; width:100%"><thead><tr>'
+            + ['Line', 'Was', 'Now'].map(h => '<th style="text-align:left; font-weight:700; padding:4px 6px; border-bottom:1px solid #d9d3c4">' + h + '</th>').join('')
+            + '</tr></thead><tbody>'
+            + o.changes.map(c => '<tr><td style="padding:4px 6px">' + calEsc(MUSE_LABEL[c.field] || c.field) + '</td><td style="padding:4px 6px">' + calEsc(offerFieldText(c.field, c.from)) + '</td><td style="padding:4px 6px; font-weight:700">' + calEsc(offerFieldText(c.field, c.to)) + '</td></tr>').join('')
+            + '</tbody></table></div>'
+          : '<div style="overflow-x:auto"><table style="border-collapse:collapse; font-size:12px; width:100%"><thead><tr>' + head + '</tr></thead><tbody><tr>' + body + '</tr></tbody></table></div>';
         return '<div class="offerRow" data-offer="' + calEsc(o.id) + '" style="border-top:1px solid #e6e1d6; padding:10px 0; border-radius:8px">'
           + check
           + '<div style="overflow-x:auto"><table style="border-collapse:collapse; font-size:12px; width:100%"><thead><tr>' + head + '</tr></thead><tbody><tr>' + body + '</tr></tbody></table></div>'
@@ -4929,7 +5031,7 @@ async function offerAnswer(oid, action){
   if(action === 'accept' && o){
     handledAdd(oid);
     calAddJobs([{vd:o.vd, site:o.site, cls:o.cls, shift:o.shift, mob:o.mob, first:o.first || o.mob, last:o.last || o.demob,
-      demob:o.demob, sdDate:o.sdDate, sdText:o.sdText, travelIn:o.travelIn, travelOut:o.travelOut, accom:o.accom, warnings:[]}]);
+      demob:o.demob, sdDate:o.sdDate, sdText:o.sdText, travelIn:o.travelIn, travelOut:o.travelOut, accom:o.accom, warnings:[], recvMs:o.receivedMs}]);
   } else if(action === 'dismiss'){
     showToast('Job dismissed.');
   }
@@ -5581,7 +5683,7 @@ async function musePairShare(){
     'and send them as pending jobs for me to Accept. Nothing is added until I tap Accept.\n' +
     '\n' +
     'Set this up as a recurring background task now, not a one-off: every hour, check Gmail for ' +
-    'new Norwest mobilisation emails and send each one to nchMuseJob. Keep the pairing code above ' +
+    'new Norwest mobilisation emails and send each one to nchMuseJob, with receivedAt set to the time Gmail received that email. Keep the pairing code above ' +
     'saved and keep running until I tell you to stop. Confirm the task is created and tell me its schedule.';
   if(navigator.share){
     try{

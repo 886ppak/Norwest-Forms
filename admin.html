@@ -143,6 +143,9 @@
         <div class="tile"><b id="uWeek">–</b><span>opens this week</span></div>
         <div class="tile"><b id="uPhones">–</b><span>phones</span></div>
         <div class="tile"><b id="uDownloads">–</b><span>PDF downloads this week (no submit)</span></div>
+        <div class="tile"><b id="uMuse">–</b><span>jobs sent by Muse this week</span></div>
+        <div class="tile"><b id="uAccepts">–</b><span>jobs accepted onto calendars this week</span></div>
+        <div class="tile"><b id="uAcceptJobs">–</b><span>different jobs accepted this week</span></div>
         <div class="tile"><b id="uPeople">–</b><span>unique people (names, last 90 days)</span></div>
       </div>
       <div class="bars" id="usageBars"></div>
@@ -163,6 +166,10 @@
       <div class="legend">A count is saved only when a mobilisation email actually lands on the calendar — re-reading a bad paste doesn't count. "Shared in" = sent from Gmail, "pasted" = typed/pasted in the app. Days without a bar had no imports.</div>
     </div>
 
+    <div class="card">
+      <h2>Muse job dates <span class="sub">each version, with when the email was received</span></h2>
+      <div id="museHist" class="muted">Loading…</div>
+    </div>
     <div class="card">
       <h2>Older months <span class="sub" id="archSub"></span></h2>
       <div class="scroll"><table id="archTable"></table></div>
@@ -333,6 +340,9 @@ const USAGE_ARCHIVE_FN = useEmu
 const NCH_ALERTS_FN = useEmu
   ? 'http://127.0.0.1:5001/demo-norwest/australia-southeast1/nchAlertsAdmin'
   : 'https://australia-southeast1-norwest-forms.cloudfunctions.net/nchAlertsAdmin';
+const NCH_MUSE_HIST_FN = useEmu
+  ? 'http://127.0.0.1:5001/demo-norwest/australia-southeast1/nchMuseHistory'
+  : 'https://australia-southeast1-norwest-forms.cloudfunctions.net/nchMuseHistory';
 const PKCE_KEY = 'norwestAdminPkce';
 const b64url = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
@@ -434,9 +444,43 @@ function start(user) {
   loadJobNumbers();
   loadArchive(user);
   loadAlerts(user);
+  museHistLoad(user);
 }
 
 // Who has job alerts on, for the red installed square. Fails quietly: squares just stay green.
+const hEsc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const hDate = iso => { if(!iso) return '—'; const [y, m, d] = String(iso).split('-'); return d + '/' + m + '/' + y; };
+const HIST_FIELDS = ['mob','first','last','demob','sdDate','sdText','shift','cls','travelIn','travelOut','accom'];
+const HIST_LABEL = {mob:'MOB', first:'First', last:'Last', demob:'Demob', sdDate:'SD/FD', sdText:'SD/FD note', shift:'Shift', cls:'Class', travelIn:'Travel in', travelOut:'Travel out', accom:'Accom'};
+function museHistHtml(jobs){
+  if(!jobs.length) return 'No Muse job history yet.';
+  return jobs.map(g => {
+    let prev = null;
+    const rows = g.history.map(h => {
+      const changed = prev ? HIST_FIELDS.filter(f => (prev[f] || '') !== (h[f] || '')).map(f => HIST_LABEL[f]).join(', ') : 'first version';
+      prev = h;
+      const when = h.at ? fmtPerth(new Date(h.at)) + (h.got === 'arrival' ? ' (arrival time)' : '') : '—';
+      return '<tr><td>' + hEsc(when) + '</td><td>' + hDate(h.mob) + '</td><td>' + hDate(h.first) + '</td><td>' + hDate(h.last)
+        + '</td><td>' + hDate(h.demob) + '</td><td>' + hEsc(h.shift || '') + '</td><td>' + hEsc(changed) + '</td></tr>';
+    }).join('');
+    return '<div style="margin-top:12px"><b>VD ' + hEsc(g.vd) + '</b> · ' + hEsc(g.site) + ' · ' + hEsc(g.who)
+      + '<div style="overflow-x:auto"><table style="width:100%; border-collapse:collapse; font-size:12px"><thead><tr>'
+      + '<th align="left">Email received</th><th align="left">MOB</th><th align="left">First</th><th align="left">Last</th><th align="left">Demob</th><th align="left">Shift</th><th align="left">Changed</th>'
+      + '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  }).join('');
+}
+async function museHistLoad(user) {
+  try {
+    const token = await user.getIdToken();
+    const r = await fetch(NCH_MUSE_HIST_FN, { headers: { Authorization: 'Bearer ' + token }, cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    $('museHist').innerHTML = museHistHtml(Array.isArray(j.jobs) ? j.jobs : []);
+  } catch (e) {
+    $('museHist').textContent = 'Could not load the job history.';
+  }
+}
+
 async function loadAlerts(user) {
   try {
     const token = await user.getIdToken();
@@ -542,6 +586,10 @@ function render() {
   $('uPhones').textContent = new Set(opens.filter(r => dayOf(r.when) > weekAgo && r.device).map(r => r.device)).size;
   const downloads = usage.filter(r => r.kind === 'download' && dayOf(r.when) > weekAgo);
   $('uDownloads').textContent = downloads.length;
+  $('uMuse').textContent = usage.filter(r => r.kind === 'muse' && dayOf(r.when) > weekAgo).reduce((n, r) => n + (Number(r.jobs) || 0), 0);
+  const accepts = usage.filter(r => r.kind === 'offerAccept' && dayOf(r.when) > weekAgo);
+  $('uAccepts').textContent = accepts.length;
+  $('uAcceptJobs').textContent = new Set(accepts.map(r => r.vd)).size;
   const byPerson = {};
   downloads.forEach(r => {
     const who = (r.name || 'unnamed').trim();

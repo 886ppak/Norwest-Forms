@@ -388,7 +388,7 @@ function monthlyTotals(subRows, evRows) {
     if (r.late) late += 1;
   });
   const openDays = {}, impDays = {}, devices = new Set(), impDevices = new Set(), dlDevices = new Set();
-  let opens = 0, imports = 0, jobs = 0, viaShare = 0, downloads = 0;
+  let opens = 0, imports = 0, jobs = 0, viaShare = 0, downloads = 0, museJobs = 0;
   const dlForms = {};
   evRows.forEach(r => {
     const day = r.perthTime.slice(0, 10);
@@ -399,6 +399,9 @@ function monthlyTotals(subRows, evRows) {
       // a PDF saved without submitting: counted separately from sent forms
       downloads += 1; if (r.device) dlDevices.add(r.device);
       dlForms[r.formType || '?'] = (dlForms[r.formType || '?'] || 0) + 1;
+    } else if (r.kind === 'muse') {
+      // jobs Muse put in front of a phone this month (counts only, no names)
+      museJobs += Number(r.jobs) || 0;
     } else if (r.kind === 'calimport') {
       imports += 1; impDays[day] = (impDays[day] || 0) + 1;
       jobs += Number(r.jobs) || 0;
@@ -417,6 +420,7 @@ function monthlyTotals(subRows, evRows) {
   rows.push(['pdf_download_devices', '', dlDevices.size]);
   Object.entries(dlForms).sort().forEach(([k, n]) => rows.push(['pdf_download_form', k, n]));
   rows.push(['cal_imports', '', imports]);
+  rows.push(['muse_jobs', '', museJobs]);
   rows.push(['cal_import_devices', '', impDevices.size]);
   rows.push(['cal_import_jobs', '', jobs]);
   rows.push(['cal_import_shared_in', '', viaShare]);
@@ -1164,6 +1168,9 @@ exports.nchJobShare = onRequest(
       }
     } catch (e) { console.error('pool write failed', e && e.message); }
 
+    const emailMs = emailDateMs(text);
+    const shareRecv = emailMs != null ? emailMs : now;
+    const shareGot = emailMs != null ? 'email' : 'arrival';
     const devices = await db.collection('nchDevices').get();
     let offered = 0, suggested = 0;
     for (const d of devices.docs) {
@@ -1174,28 +1181,13 @@ exports.nchJobShare = onRequest(
       if (!r.jobs) continue;
       for (const j of r.jobs) {
         if (!j.demob || !shareCore.isOfferable({ endDate: j.demob }, now)) continue;
-        const jobNumber = j.vd || `${j.site || 'job'}-${j.mob}`;
-        const oid = shareCore.offerId(jobNumber, d.id);
-        const ref = db.collection('sharedJobs').doc(oid);
-        const written = await db.runTransaction(async (tx) => {
-          const cur = await tx.get(ref);
-          // Already accepted or dismissed by this phone: leave it alone.
-          if (cur.exists && cur.data().status !== 'pending') return false;
-          tx.set(ref, {
-            jobNumber, vd: j.vd || '', site: j.site || '', cls: j.cls || '', shift: j.shift || '',
-            mob: j.mob, first: j.first || '', last: j.last || '', demob: j.demob, sdDate: j.sdDate || '', sdText: j.sdText || '',
-            travelIn: j.travelIn || '', travelOut: j.travelOut || '', accom: j.accom || '',
-            matchKind: j.matchKind, matchedName: j.matchedName || '', targetInstallId: d.id, status: 'pending',
-            cutoffMs: shareCore.cutoffMs(j.demob),
-            expireAt: Timestamp.fromMillis(shareCore.poolExpiryMs(j.demob)),
-            createdAt: FieldValue.serverTimestamp(),
-          });
-          return true;
-        });
-        if (!written) continue;
+        const res1 = await offerForPhone(db, d.id, j, 'share', shareRecv, shareGot);
+        if (res1.outcome === 'same' || res1.outcome === 'skip' || res1.outcome === 'older') continue;
         if (j.matchKind === 'suggest') suggested++; else offered++;
+        if (res1.outcome === 'updated') continue;
         // Alert the phone if it has allowed alerts. The offer is already stored; a failed alert changes nothing.
-        if (d.data().push) await sendOfferAlert(d.id, d.data().push, jobNumber, oid, j.matchKind, j.matchedName);
+        const jobNumber = j.vd || `${j.site || 'job'}-${j.mob}`;
+        if (d.data().push) await sendOfferAlert(d.id, d.data().push, jobNumber, res1.id, j.matchKind, j.matchedName);
       }
     }
     res.json({ offered, suggested });
@@ -1286,6 +1278,9 @@ exports.nchOfferAnswer = onRequest(
       const snap = await tx.get(ref);
       if (!snap.exists || snap.data().targetInstallId !== id) return { code: 404 };
       const o = snap.data();
+      // A change offer's row becomes the base row once accepted, so later emails compare against it.
+      const baseRef = o.kind === 'change' && o.baseId ? getFirestore().collection('sharedJobs').doc(o.baseId) : null;
+      const baseSnap = baseRef ? await tx.get(baseRef) : null;
       if (action === 'added') {
         // The phone has put an accepted job on its calendar. Stops it being sent again.
         if (o.status !== 'accepted') return { code: 409 };
@@ -1295,11 +1290,23 @@ exports.nchOfferAnswer = onRequest(
       if (o.status !== 'pending') return { code: 200, status: o.status };
       if (Date.now() >= o.cutoffMs) return { code: 410 };
       tx.update(ref, { status: action, answeredAt: FieldValue.serverTimestamp() });
-      return { code: 200, status: action };
+      if (action === 'accepted' && baseSnap && baseSnap.exists && baseSnap.data().status === 'accepted') {
+        tx.update(baseRef, Object.assign(museRow(o), { fp: o.fp, receivedMs: typeof o.receivedMs === 'number' ? o.receivedMs : 0 }));
+      }
+      return { code: 200, status: action, counted: action === 'accepted', vd: o.vd || '', source: o.source === 'muse' ? 'muse' : 'share' };
     });
     if (result.code === 409) { res.status(409).json({ error: 'Not accepted' }); return; }
     if (result.code === 404) { res.status(404).json({ error: 'Not found' }); return; }
     if (result.code === 410) { res.status(410).json({ error: 'Past the submission cut-off.' }); return; }
+    if (result.counted) {
+      // Usage: a job accepted onto a calendar from the share (Muse or a crew share). Counts, no names.
+      try {
+        await getFirestore().collection('usageEvents').add({
+          kind: 'offerAccept', at: Timestamp.fromMillis(Date.now()), expireAt: Timestamp.fromMillis(Date.now() + 90 * 86400000),
+          vd: String(result.vd).slice(0, 20), source: result.source, jobs: 1,
+        });
+      } catch (e) { console.error('offer accept usage failed', String(e && e.message || e).slice(0, 120)); }
+    }
     res.json({ status: result.status });
   }
 );
@@ -1354,6 +1361,47 @@ exports.nchAlertsAdmin = onRequest(
       return { name: String(x.name || '').slice(0, 80), alerts: !!x.push };
     }).filter(p => p.name);
     res.json({ people });
+  }
+);
+
+// Owner-only: each Muse job's date history per person, with the email's received time.
+exports.nchMuseHistory = onRequest(
+  { region: REGION, invoker: 'public', maxInstances: 3 },
+  async (req, res) => {
+    const origin = new URL(ADMIN_PAGE_URL.value()).origin;
+    res.set('Access-Control-Allow-Origin', origin);
+    res.set('Vary', 'Origin');
+    if (req.method === 'OPTIONS') {
+      res.set('Access-Control-Allow-Methods', 'GET');
+      res.set('Access-Control-Allow-Headers', 'Authorization');
+      res.set('Access-Control-Max-Age', '3600');
+      res.status(204).send('');
+      return;
+    }
+    if (req.method !== 'GET') { res.status(405).send('Method Not Allowed'); return; }
+    const auth = String(req.get('Authorization') || '');
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+    if (!token) { res.status(401).json({ error: 'Sign in first' }); return; }
+    let email;
+    try {
+      email = String((await getAuth().verifyIdToken(token)).email || '').toLowerCase();
+    } catch (e) { res.status(401).json({ error: 'Sign in again' }); return; }
+    if (!ADMIN_EMAILS.includes(email)) { res.status(403).json({ error: 'Not an admin account' }); return; }
+    const snap = await getFirestore().collection('sharedJobs').where('source', '==', 'muse').limit(500).get();
+    const groups = {};
+    snap.docs.forEach(d => {
+      const x = d.data() || {};
+      if (x.kind === 'change' || !Array.isArray(x.history) || !x.history.length) return;
+      const key = (x.vd || x.jobNumber || d.id) + '|' + String(x.matchedName || '');
+      const g = groups[key] || (groups[key] = { vd: String(x.vd || ''), site: String(x.site || ''), who: String(x.matchedName || '').slice(0, 80), history: [] });
+      g.history = g.history.concat(x.history.map(h => ({ at: h.at, got: h.got || 'arrival', mob: h.mob, first: h.first, last: h.last,
+        demob: h.demob, shift: h.shift, sdDate: h.sdDate, sdText: h.sdText, cls: h.cls, travelIn: h.travelIn, travelOut: h.travelOut, accom: h.accom })));
+    });
+    const jobs = Object.values(groups).map(g => {
+      g.history.sort((a, b) => (a.at || 0) - (b.at || 0));
+      return g;
+    }).sort((a, b) => ((b.history[b.history.length - 1] || {}).at || 0) - ((a.history[a.history.length - 1] || {}).at || 0));
+    res.json({ jobs: jobs.slice(0, 100) });
   }
 );
 
@@ -1461,6 +1509,81 @@ exports.nchMuseRevoke = onRequest(
   }
 );
 
+// Muse change handling. Only the phone's own row counts. A job is identified by VD + MOB,
+// so a moved MOB is a different job. The fingerprint is a hash of the row fields, so an
+// identical email never creates a second offer.
+const MUSE_ROW_FIELDS = ['site', 'cls', 'shift', 'mob', 'first', 'last', 'demob', 'sdDate', 'sdText', 'travelIn', 'travelOut', 'accom'];
+function museRow(j) {
+  const o = {};
+  for (const f of MUSE_ROW_FIELDS) o[f] = j[f] == null ? '' : String(j[f]);
+  return o;
+}
+function museFingerprint(row) {
+  return createHash('sha1').update(JSON.stringify(MUSE_ROW_FIELDS.map(f => row[f]))).digest('hex').slice(0, 16);
+}
+function museChanges(from, to) {
+  return MUSE_ROW_FIELDS.filter(f => (from[f] || '') !== (to[f] || ''))
+    .map(f => ({ field: f, from: from[f] || '', to: to[f] || '' }));
+}
+
+// The date an email was sent, if its text says so (a Sent: or Date: line). Perth time unless the line
+// names a zone. Null when there is no usable date.
+function emailDateMs(text) {
+  const m = String(text || '').slice(0, 4000).match(/^\s*(?:Sent|Date)\s*:\s*(.+)$/im);
+  if (!m) return null;
+  let s = m[1].trim();
+  if (!/(GMT|UTC|Z\b|[+-]\d{4})/i.test(s)) s += ' +0800';
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : null;
+}
+
+// One job for one phone. VD is the job, so a date change is the same job moved.
+// A version replaces the stored one only if it is newer; an older email is ignored.
+async function offerForPhone(db, phoneId, j, source, receivedMs, got) {
+  const jobKey = j.vd || `${j.site || 'job'}-${j.mob}`;
+  const oid = shareCore.offerId(jobKey, phoneId);
+  const oref = db.collection('sharedJobs').doc(oid);
+  const row = museRow(j);
+  const fp = museFingerprint(row);
+  const he = Object.assign({ at: receivedMs, got, fp }, row);
+  const base = Object.assign({}, row, {
+    jobNumber: jobKey, vd: j.vd || '', matchKind: j.matchKind, matchedName: j.matchedName || '',
+    targetInstallId: phoneId, source, fp, receivedMs,
+    cutoffMs: shareCore.cutoffMs(j.demob),
+    expireAt: Timestamp.fromMillis(shareCore.poolExpiryMs(j.demob)),
+  });
+  return db.runTransaction(async (tx) => {
+    const cur = await tx.get(oref);
+    if (!cur.exists) {
+      tx.set(oref, Object.assign({ status: 'pending', kind: 'new', createdAt: FieldValue.serverTimestamp(), history: [he] }, base));
+      return { outcome: 'new', id: oid };
+    }
+    const c = cur.data();
+    if (c.fp === fp) return { outcome: 'same', id: oid };
+    if (typeof c.receivedMs === 'number' && receivedMs < c.receivedMs) return { outcome: 'older', id: oid };
+    if (c.status === 'pending') {
+      tx.update(oref, Object.assign({ updatedAt: FieldValue.serverTimestamp(), history: museAppend(c.history, he) }, base));
+      return { outcome: 'updated', id: oid };
+    }
+    if (c.status !== 'accepted') return { outcome: 'skip', id: oid };   // dismissed: respect it
+    const coid = shareCore.offerId(`${jobKey}-${fp}`, phoneId);
+    const cref = db.collection('sharedJobs').doc(coid);
+    const cc = await tx.get(cref);
+    if (cc.exists) return { outcome: 'same', id: coid };
+    const changes = museChanges(museRow(c), row);
+    tx.update(oref, { history: museAppend(c.history, he) });
+    tx.set(cref, Object.assign({ status: 'pending', kind: 'change', baseId: oid, changes, createdAt: FieldValue.serverTimestamp() }, base));
+    return { outcome: 'change', id: coid };
+  });
+}
+
+// Each version of a job's dates, newest last, capped. A version is added only when its row differs.
+function museAppend(hist, he) {
+  const h = Array.isArray(hist) ? hist.slice(-29) : [];
+  if (h.length && h[h.length - 1].fp === he.fp) return h;
+  return h.concat([he]);
+}
+
 // Muse sends one mobilisation email. No session token: the pairing code is the credential.
 // Body: { code, emailText, subject? }   (no installId - the pairing is on the account)
 // Returns: { offered, suggested, phones, jobs: [{ vd, site, mob, demob }] } - never the email text.
@@ -1534,6 +1657,16 @@ exports.nchMuseJob = onRequest(
     }
     const now = Date.now();
     let offered = 0, suggested = 0, reached = 0;
+    // When Gmail received the email (Muse sends receivedAt). Falls back to arrival time, marked as such.
+    let receivedMs = now, got = 'arrival';
+    if (body.receivedAt != null) {
+      const t = typeof body.receivedAt === 'number' ? body.receivedAt : Date.parse(String(body.receivedAt));
+      if (Number.isFinite(t) && t <= now + 86400000 && t > now - 400 * 86400000) { receivedMs = t; got = 'email'; }
+    }
+    if (got === 'arrival') {
+      const em = emailDateMs(text);
+      if (em != null && em <= now + 86400000 && em > now - 400 * 86400000) { receivedMs = em; got = 'email'; }
+    }
     const jobs = [];
     for (const dev of phones) {
       // parseEmailFuzzy matches on the name this phone registered.
@@ -1542,36 +1675,30 @@ exports.nchMuseJob = onRequest(
       const r = parseEmailFuzzy(text, name, subject);
       if (!r.jobs) continue;
       reached++;
+      let phoneCount = 0;
       for (const j of r.jobs) {
         if (!j.demob || !shareCore.isOfferable({ endDate: j.demob }, now)) continue;
-        const jobNumber = j.vd || `${j.site || 'job'}-${j.mob}`;
-        const oid = shareCore.offerId(jobNumber, dev.id);
-        const oref = db.collection('sharedJobs').doc(oid);
-        const written = await db.runTransaction(async (tx) => {
-          const cur = await tx.get(oref);
-          // Already accepted or dismissed: leave it alone.
-          if (cur.exists && cur.data().status !== 'pending') return false;
-          tx.set(oref, {
-            jobNumber, vd: j.vd || '', site: j.site || '', cls: j.cls || '', shift: j.shift || '',
-            mob: j.mob, first: j.first || '', last: j.last || '', demob: j.demob,
-            sdDate: j.sdDate || '', sdText: j.sdText || '',
-            travelIn: j.travelIn || '', travelOut: j.travelOut || '', accom: j.accom || '',
-            matchKind: j.matchKind, matchedName: j.matchedName || '',
-            targetInstallId: dev.id, status: 'pending', source: 'muse',
-            cutoffMs: shareCore.cutoffMs(j.demob),
-            expireAt: Timestamp.fromMillis(shareCore.poolExpiryMs(j.demob)),
-            createdAt: FieldValue.serverTimestamp(),
-          });
-          return true;
-        });
-        if (!written) continue;
+        const res1 = await offerForPhone(db, dev.id, j, 'muse', receivedMs, got);
+        if (res1.outcome === 'same' || res1.outcome === 'skip' || res1.outcome === 'older') continue;
+        phoneCount++;
         if (j.matchKind === 'suggest') suggested++; else offered++;
+        const jobNumber = j.vd || `${j.site || 'job'}-${j.mob}`;
         if (!jobs.some(x => x.vd === (j.vd || '') && x.demob === j.demob)) {
-          jobs.push({ vd: j.vd || '', site: j.site || '', mob: j.mob, demob: j.demob });
+          jobs.push({ vd: j.vd || '', site: j.site || '', mob: j.mob, demob: j.demob, outcome: res1.outcome });
         }
-        // Same alert a P2P share sends. The offer is already stored; a failed alert changes nothing.
+        // Alert only for a new offer or a changed one. A refreshed pending offer stays quiet.
+        if (res1.outcome === 'updated') continue;
         const pd = dev.data.push;
-        if (pd) await sendOfferAlert(dev.id, pd, jobNumber, oid, j.matchKind, j.matchedName);
+        if (pd) await sendOfferAlert(dev.id, pd, jobNumber, res1.id, j.matchKind, j.matchedName);
+      }
+      // Usage: one count per phone that got something new from Muse. Counts jobs, not names.
+      if (phoneCount) {
+        try {
+          await db.collection('usageEvents').add({
+            kind: 'muse', at: Timestamp.fromMillis(now), expireAt: Timestamp.fromMillis(now + 90 * 86400000),
+            jobs: phoneCount, phone: createHash('sha1').update(dev.id).digest('hex').slice(0, 12),
+          });
+        } catch (e) { console.error('muse usage failed', String(e && e.message || e).slice(0, 120)); }
       }
     }
     // A good call clears the bad-code counter on whichever pairing matched.
