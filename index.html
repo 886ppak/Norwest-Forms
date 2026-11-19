@@ -5542,7 +5542,11 @@ async function musePairShare(){
     'Please import any Norwest mobilisation emails to the phones signed in as this account, ' +
     'and check for new ones every hour. ' +
     'Parse them as VD, site, shift, MOB, first shift, last shift, DMOB and name, ' +
-    'and send them as pending jobs for me to Accept. Nothing is added until I tap Accept.';
+    'and send them as pending jobs for me to Accept. Nothing is added until I tap Accept.\n' +
+    '\n' +
+    'Set this up as a recurring background task now, not a one-off: every hour, check Gmail for ' +
+    'new Norwest mobilisation emails and send each one to nchMuseJob. Keep the pairing code above ' +
+    'saved and keep running until I tell you to stop. Confirm the task is created and tell me its schedule.';
   if(navigator.share){
     try{
       await navigator.share({ title: 'Norwest Forms - Allow Muse', text: msg });
