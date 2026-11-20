@@ -5609,7 +5609,7 @@ function nchSession(){
     const s = JSON.parse(localStorage.getItem(NCH_SESSION_KEY)||'null');
     if(!s || !s.token) return null;
     const body = JSON.parse(atob(s.token.split('.')[0].replace(/-/g,'+').replace(/_/g,'/')));
-    if(!body.exp || Date.now() > body.exp){ nchSignOut(true); return null; }
+    if(!body.exp || Date.now() > body.exp){ nchSignOut(true, 'the sign-in on this phone has expired'); return null; }
     return s;
   }catch(e){ return null; }
 }
@@ -5646,9 +5646,9 @@ async function nchHandleReturn(){
     nchSyncNow();
   }catch(e){ showToast('Could not reach the sign-in server. Try again shortly.'); }
 }
-function nchSignOut(quiet){
+function nchSignOut(quiet, reason){
   try{ localStorage.removeItem(NCH_SESSION_KEY); localStorage.removeItem(NCH_SYNC_META_KEY); }catch(e){}
-  if(!quiet) showToast('Signed out on this phone. Your calendar stays on this phone.');
+  if(!quiet) showToast('Signed out on this phone' + (reason ? ' (' + reason + ')' : '') + '. Your calendar stays on this phone.');
   profileRenderAccount();
 }
 const NCH_ADMIN_EMAILS = ['myslewer@gmail.com', '15buzza@gmail.com', 'aiden.tunupopo@gmail.com'];
@@ -5862,7 +5862,7 @@ async function nchSyncNow(){
   let remote, gmailChanged = false;
   try{
     const r = await fetch(NCH_API + '/nchCalendarGet', {headers:{Authorization:'Bearer ' + s.token}});
-    if(r.status === 401){ nchSignOut(); showToast('Please sign in again.'); return; }
+    if(r.status === 401){ nchSignOut(true); showToast('Signed out: the calendar sync was refused (HTTP 401). Sign in again.'); return; }
     if(!r.ok) return;
     const body = await r.json();
     remote = body.stores || {};
@@ -5905,7 +5905,7 @@ async function nchSyncNow(){
   try{
     const r = await fetch(NCH_API + '/nchCalendarPut', {method:'POST', headers:{'Content-Type':'application/json', Authorization:'Bearer ' + s.token},
       body: JSON.stringify({stores: out})});
-    if(r.status === 401){ nchSignOut(); return; }
+    if(r.status === 401){ nchSignOut(true); showToast('Signed out: the server did not accept the sign-in (HTTP 401).'); return; }
   }catch(e){ /* keep local; next sync sends it */ }
   // A phone with no timesheet name takes the one synced from the account (never overwrites a name typed here).
   try{
