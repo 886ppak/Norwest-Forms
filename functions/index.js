@@ -1147,6 +1147,25 @@ exports.nchDeviceTouch = onRequest(
 
 // The sharer sends the email text. Every other registered phone whose name matches
 // (exact or close) gets a pending offer, unless the job's cut-off has passed.
+// Keep the job rows for 14 days after each job's demob, so people who register later still get them (v1.101).
+// Shared by pasted/shared emails (nchJobShare) and Muse, so every route feeds the same pool.
+// Only the parsed rows are kept, never the email.
+async function poolWrite(db, text, subject, now) {
+  try {
+    for (const j of calParseAllRows(text, subject)) {
+      if (!j.demob || !shareCore.isOfferable({ endDate: j.demob }, now)) continue;
+      const jobNumber = j.vd || `${j.site || 'job'}-${j.mob}`;
+      const pid = require('crypto').createHash('sha1').update(`${j.crewName}|${jobNumber}|${j.mob}|${j.demob}`).digest('hex').slice(0, 32);
+      await db.collection('sharedPool').doc(pid).set({
+        crewName: j.crewName, jobNumber, vd: j.vd || '', site: j.site || '', cls: j.cls || '', shift: j.shift || '',
+        mob: j.mob, first: j.first || '', last: j.last || '', demob: j.demob, sdDate: j.sdDate || '', sdText: j.sdText || '',
+        travelIn: j.travelIn || '', travelOut: j.travelOut || '', accom: j.accom || '',
+        expireAt: Timestamp.fromMillis(shareCore.poolExpiryMs(j.demob)), addedAt: now,
+      }, { merge: true });
+    }
+  } catch (e) { console.error('pool write failed', e && e.message); }
+}
+
 exports.nchJobShare = onRequest(
   { region: REGION, invoker: 'public', maxInstances: 5, timeoutSeconds: 60, secrets: [VAPID_PRIVATE] },
   async (req, res) => {
@@ -1161,21 +1180,7 @@ exports.nchJobShare = onRequest(
     const db = getFirestore();
     await db.collection('nchDevices').doc(sharer).set({ name, lastOpenedMs: now }, { merge: true });
 
-    // Keep the job rows for 14 days after each job's demob, so people who register later still get them (v1.101).
-    // Only the parsed rows are kept, never the email. Crew names are kept with the rows; the owner can see them.
-    try {
-      for (const j of calParseAllRows(text, String(body.subject || '').slice(0, 200))) {
-        if (!j.demob || !shareCore.isOfferable({ endDate: j.demob }, now)) continue;
-        const jobNumber = j.vd || `${j.site || 'job'}-${j.mob}`;
-        const pid = require('crypto').createHash('sha1').update(`${j.crewName}|${jobNumber}|${j.mob}|${j.demob}`).digest('hex').slice(0, 32);
-        await db.collection('sharedPool').doc(pid).set({
-          crewName: j.crewName, jobNumber, vd: j.vd || '', site: j.site || '', cls: j.cls || '', shift: j.shift || '',
-          mob: j.mob, first: j.first || '', last: j.last || '', demob: j.demob, sdDate: j.sdDate || '', sdText: j.sdText || '',
-          travelIn: j.travelIn || '', travelOut: j.travelOut || '', accom: j.accom || '',
-          expireAt: Timestamp.fromMillis(shareCore.poolExpiryMs(j.demob)), addedAt: now,
-        }, { merge: true });
-      }
-    } catch (e) { console.error('pool write failed', e && e.message); }
+    await poolWrite(db, text, String(body.subject || '').slice(0, 200), now);
 
     const emailMs = emailDateMs(text);
     const shareRecv = emailMs != null ? emailMs : now;
@@ -1790,6 +1795,7 @@ exports.nchMuseJob = onRequest(
     }
     const now = Date.now();
     let offered = 0, suggested = 0, reached = 0;
+    await poolWrite(db, text, subject, now);
     // When Gmail received the email (Muse sends receivedAt). Falls back to arrival time, marked as such.
     let receivedMs = now, got = 'arrival';
     if (body.receivedAt != null) {
