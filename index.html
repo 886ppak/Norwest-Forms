@@ -4281,7 +4281,11 @@ const GMAIL_BETA_EMAILS = ['myslewer@gmail.com', 'aiden.tunupopo@gmail.com'];   
 function gmailCardHtml(){
   const me = nchSession();
   if(!me || !GMAIL_BETA_EMAILS.includes(String(me.email).toLowerCase())) return '';
-  const g = gmailLoad() || {connected:false, status:'none', jobs:[]};
+  const g = gmailLoad();
+  // No saved Gmail state yet on this phone: say so, rather than showing "Connect" for a connected account.
+  if(!g){
+    return '<div class="pcard"><div class="phead"><div class="pgicon">G</div><div class="ptxt"><b>Gmail</b><div class="psub">Checking Gmail status…</div></div><span class="ptag off">…</span></div></div>';
+  }
   const n = (g.jobs || []).length;
   let tag = '<span class="ptag off">Off</span>';
   let sub = 'Read-only. Only rows with your name are kept.';
@@ -4366,8 +4370,9 @@ async function gmailCheckNow(){
     const j = await r.json().catch(() => ({}));
     if(j.status === 'reconnect'){ showToast('Google needs you to allow Gmail again.'); gmailConnect(); return; }
     if(!r.ok){ showToast(j.error || ('Gmail check did not run (HTTP ' + r.status + ').')); return; }
-    localStorage.removeItem(GMAIL_SUMMARY_KEY);
     showToast('Gmail checked. ' + j.jobs + ' job(s) found.');
+    // Refresh the saved Gmail state from the server first, so the card does not briefly show "Connect".
+    await nchSyncNow();
     profileRenderAccount(); calRefresh();
   }catch(e){ showToast('Could not reach the Gmail check: ' + (e && e.message ? e.message : 'network error') + '. Try again.'); }
 }
