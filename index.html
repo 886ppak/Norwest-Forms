@@ -4357,17 +4357,19 @@ function gmailBannerUpdate(status){
 }
 // Check this account's Gmail now (owner beta). The server allows one manual check an hour.
 async function gmailCheckNow(){
-  const s = nchSession(); if(!s){ gmailSignInThenConnect(); return; }
+  // Only Google's own "reconnect" answer sends you to the Gmail authorise page. Any other problem
+  // shows what actually went wrong, instead of sending you back through Google.
+  const s = nchSession(); if(!s){ showToast('Sign in first, then tap Check now.'); return; }
   showToast('Checking Gmail…');
   try{
     const r = await fetch(NCH_API + '/nchGmailCheckNow', {method:'POST', headers:{Authorization:'Bearer ' + s.token}});
     const j = await r.json().catch(() => ({}));
-    if(j.status === 'reconnect'){ showToast('Gmail needs you to authorise again.'); gmailConnect(); return; }
-    if(!r.ok){ showToast(j.error || 'Could not check Gmail. Try again.'); return; }
+    if(j.status === 'reconnect'){ showToast('Google needs you to allow Gmail again.'); gmailConnect(); return; }
+    if(!r.ok){ showToast(j.error || ('Gmail check did not run (HTTP ' + r.status + ').')); return; }
     localStorage.removeItem(GMAIL_SUMMARY_KEY);
     showToast('Gmail checked. ' + j.jobs + ' job(s) found.');
     profileRenderAccount(); calRefresh();
-  }catch(e){ gmailSignInThenConnect(); }   // the sign-in has expired: sign in, then the Gmail authorise window
+  }catch(e){ showToast('Could not reach the Gmail check: ' + (e && e.message ? e.message : 'network error') + '. Try again.'); }
 }
 async function gmailDisconnect(){
   const s = nchSession(); if(!s) return;
