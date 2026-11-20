@@ -5671,12 +5671,9 @@ function museIsTestUser(){
 }
 // The Muse card is offered to the test account AND to any phone that is not signed in, so a
 // mate can pair without making an account. Signed in as someone else: hidden.
-function museCardVisible(){
-  try{
-    if(nchSession()) return museIsTestUser();
-    return true;                       // signed out: device pairing
-  }catch(e){ return false; }
-}
+// Everyone sees the Muse card, signed in or not. Account-wide pairing stays with the owner's account;
+// everyone else pairs per phone.
+function museCardVisible(){ return true; }
 function musePairLoad(){
   try{ return JSON.parse(localStorage.getItem(MUSE_PAIR_KEY) || 'null'); }catch(e){ return null; }
 }
