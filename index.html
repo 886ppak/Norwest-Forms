@@ -330,6 +330,26 @@
   /* profile: settings rows + pinned footer (v1.67) */
   .profCard{ display:flex; flex-direction:column; max-height:88vh; }
   .profBody{ overflow:auto; flex:1; min-height:0; }
+  .pcards{ display:flex; flex-direction:column; gap:10px; margin-top:12px; }
+  .pcard{ background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; }
+  .phead{ display:flex; gap:10px; align-items:center; }
+  .phead .ptxt{ flex:1; min-width:0; }
+  .phead b{ font-size:16px; }
+  .psub{ font-size:12.5px; color:var(--muted); line-height:1.45; margin-top:2px; }
+  .ptag{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap; }
+  .ptag.on{ background:#e3f1e8; color:var(--good); }
+  .ptag.off{ background:#eee9df; color:var(--muted); }
+  .ptag.wait,.ptag.warn{ background:#fbeedb; color:#9a5b00; }
+  .pgicon{ width:36px; height:36px; border-radius:10px; background:#fbe3d6; display:grid; place-items:center; font-weight:800; color:var(--accent-dark); flex:none; }
+  .pmlogo{ width:36px; height:36px; border-radius:10px; background:#fff; padding:3px; border:1px solid var(--line); flex:none; }
+  .pbtn{ display:block; width:100%; border:0; border-radius:10px; padding:12px; margin-top:12px; font:700 15px system-ui,sans-serif; background:var(--accent); color:#fff; text-align:center; cursor:pointer; }
+  .pbtn.ghost{ background:#fff; color:var(--accent-dark); border:1px solid var(--line); }
+  .pbtn.danger{ background:#fff; color:#b3261e; border:1px solid var(--line); }
+  .plink{ background:none; border:0; color:var(--accent-dark); font:600 14px system-ui,sans-serif; padding:10px 0 0; cursor:pointer; }
+  .pfoot{ text-align:center; }
+  .pnote{ font-size:12px; color:var(--muted); margin-top:8px; text-align:center; }
+  .pmanage{ margin-top:10px; border-top:1px solid var(--line); padding-top:6px; }
+  .pcode{ font-family:var(--mono); font-size:12px; word-break:break-all; margin:8px 0 0; }
   .acctList{ margin-top:12px; border-top:1px solid #e5e0d4; }
   .acctRow{ display:flex; align-items:center; justify-content:space-between; width:100%; min-height:52px; padding:0 4px; border:0; border-bottom:1px solid #e5e0d4; background:none; font:600 16px/1.2 system-ui,-apple-system,sans-serif; color:var(--ink); text-align:left; cursor:pointer; }
   .acctRow .chev{ font-size:22px; color:#9a9284; }
@@ -4262,27 +4282,29 @@ function gmailCardHtml(){
   const me = nchSession();
   if(!me || !GMAIL_BETA_EMAILS.includes(String(me.email).toLowerCase())) return '';
   const g = gmailLoad() || {connected:false, status:'none', jobs:[]};
-  let msg = '', rows = '';
-  if(!g.connected){
-    msg = 'Import your job emails from Gmail. Read-only: only rows with your name are kept, and emails are not stored. Checked once a week.';
-    rows = '<button class="acctRow" onclick="gmailConnect()"><span>Connect Gmail</span><span class="chev">&rsaquo;</span></button>';
-  } else if(g.status === 'reconnect'){
-    msg = 'Gmail needs reconnecting (Google asks about once a week in test mode). Your jobs stay on the calendar.';
-    rows = '<button class="acctRow" onclick="gmailConnect()"><span>Reconnect Gmail</span><span class="chev">&rsaquo;</span></button>';
-  } else if(g.status === 'need-name'){
-    msg = 'Gmail is connected. Set your full name in your profile so the import knows which rows are yours.';
-  } else if(g.status === 'error'){
-    msg = 'Gmail import had a problem. It will try again next week.';
-  } else {
-    msg = 'Gmail is connected. ' + (g.jobs||[]).length + ' job(s) imported. Checked once a week.';
+  const n = (g.jobs || []).length;
+  let tag = '<span class="ptag off">Off</span>';
+  let sub = 'Read-only. Only rows with your name are kept.';
+  let btn = '<button class="pbtn" onclick="gmailConnect()">Connect Gmail</button>';
+  let foot = '';
+  if(g.connected){
+    tag = '<span class="ptag on">On</span>';
+    sub = (n ? n + ' job' + (n === 1 ? '' : 's') + ' imported. ' : '') + 'Checked once a week.';
+    btn = '<button class="pbtn ghost" onclick="gmailCheckNow()">Check now</button>';
+    foot = '<button class="plink" onclick="gmailDisconnect()">Disconnect</button>';
+    if(g.status === 'reconnect'){
+      tag = '<span class="ptag warn">Reconnect</span>';
+      sub = 'Gmail needs reconnecting. Your jobs stay on the calendar.';
+      btn = '<button class="pbtn" onclick="gmailConnect()">Reconnect Gmail</button>';
+      foot = '';
+    } else if(g.status === 'need-name'){
+      sub = 'Set your full name in your profile so the import knows which rows are yours.';
+    } else if(g.status === 'error'){
+      sub = 'Gmail import had a problem. It will try again next week.';
+    }
   }
-  if(g.connected) rows += '<button class="acctRow" onclick="gmailCheckNow()"><span>Check Gmail now</span></button>';
-  if(g.connected) rows += '<button class="acctRow" onclick="gmailDisconnect()"><span>Disconnect Gmail</span></button>';
-  rows += '<div class="hint" style="padding:8px 4px 0">This phone\'s usage id: '+calEsc(usageDeviceId())+' (owner only, for the usage stats)</div>';
-  const ls = Number(localStorage.getItem('norwestLastSync') || 0);
-  const when = ls ? new Date(ls).toLocaleString('en-AU', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'}) : 'not yet';
-  return '<div class="hint" style="padding:8px 4px 0">'+calEsc(msg)+'</div>'+rows+
-    '<div class="hint" style="padding:8px 4px 0; font-weight:600">Last sync: '+calEsc(when)+'</div>';
+  return '<div class="pcard"><div class="phead"><div class="pgicon">G</div><div class="ptxt"><b>Gmail</b><div class="psub">'
+    + calEsc(sub) + '</div></div>' + tag + '</div>' + btn + (foot ? '<div class="pfoot">' + foot + '</div>' : '') + '</div>';
 }
 // The app session has expired: sign in again, then go straight on to Google's Gmail authorise window.
 function gmailSignInThenConnect(){
@@ -4762,8 +4784,10 @@ async function offersSync(force){
     const sess = nchSession();
     const touch = {installId: id, name};
     if(sess && sess.email) touch.account = String(sess.email).toLowerCase();
-    await fetch(NCH_API + '/nchDeviceTouch', {method:'POST', headers:{'Content-Type':'application/json'},
+    const tr = await fetch(NCH_API + '/nchDeviceTouch', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify(touch)});
+    const tj = await tr.json().catch(() => ({}));
+    if(tj && tj.museLastMs){ try{ localStorage.setItem('norwestMuseLast', String(tj.museLastMs)); }catch(e){} }
     const r = await fetch(NCH_API + '/nchOffersGet?installId=' + encodeURIComponent(id));
     if(!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
@@ -5659,7 +5683,7 @@ function musePairLoad(){
 function musePairSave(p){
   try{ localStorage.setItem(MUSE_PAIR_KEY, JSON.stringify(p)); return true; }catch(e){ return false; }
 }
-function musePairClear(){ try{ localStorage.removeItem(MUSE_PAIR_KEY); }catch(e){} }
+function musePairClear(){ try{ localStorage.removeItem(MUSE_PAIR_KEY); localStorage.removeItem('norwestMuseLast'); }catch(e){} }
 
 async function museSha256Hex(code){
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(code));
@@ -5736,7 +5760,7 @@ async function musePairShare(){
     'and send them as pending jobs for me to Accept. Nothing is added until I tap Accept.\n' +
     '\n' +
     'Set this up as a recurring background task now, not a one-off: every hour, check Gmail for ' +
-    'new Norwest mobilisation emails and send each one to nchMuseJob, with receivedAt set to the time Gmail received that email. Keep the pairing code above ' +
+    'new Norwest mobilisation emails and send each one to nchMuseJob, with receivedAt set to the time Gmail received that email. After every check, even one with no new emails, call nchMusePing with the pairing code. Keep the pairing code above ' +
     'saved and keep running until I tell you to stop. Confirm the task is created and tell me its schedule.';
   if(navigator.share){
     try{
@@ -5775,25 +5799,41 @@ async function musePairRevoke(){
 // The Muse rows in Profile. Shown for the test account, and for any phone that is signed out.
 // Unpaired: one primary "Allow Muse". Once paired that button is REPLACED by "Scan again now";
 // the pairing send is only reachable from the small link, since it is a one-off.
+let museManageOpen = false;
+function museAgo(ms){
+  const m = Math.round((Date.now() - ms) / 60000);
+  if(m < 2) return 'just now';
+  if(m < 60) return m + ' min ago';
+  const h = Math.round(m / 60);
+  return h < 24 ? h + ' h ago' : Math.round(h / 24) + ' days ago';
+}
+function museToggleManage(){ museManageOpen = !museManageOpen; profileRenderAccount(); }
+// Allow Muse: make the pairing code, then open the share picker with the setup message ready.
+async function museAllow(){
+  await musePairCreate();
+  if(musePairLoad()) await musePairShare();
+}
 function museCardHtml(){
   if(!museCardVisible()) return '';
-  const icon = '<img src="icons/muse-128.png" alt="" aria-hidden="true">';
+  const icon = '<img class="pmlogo" src="icons/muse-128.png" alt="">';
   const p = musePairLoad();
   if(!p){
-    return '<div class="hint" style="padding:8px 4px 0">Allow Muse (test): lets Muse send parsed mobilisation emails to this phone as jobs to accept. Nothing is added until you accept.</div>'
-      + '<button class="museBtn" onclick="musePairCreate()">' + icon + '<span>Allow Muse</span></button>';
+    return '<div class="pcard"><div class="phead">' + icon + '<div class="ptxt"><b>Muse</b><div class="psub">Sends jobs from your mobilisation emails. You still accept each one.</div></div><span class="ptag off">Off</span></div>'
+      + '<button class="pbtn" onclick="museAllow()">Allow Muse</button>'
+      + '<div class="pnote">Opens the share picker with the setup message ready to send.</div></div>';
   }
-  // Older pairings were stored without a scope; treat anything not marked 'device' as the account.
-  const where = (p.scope === 'device')
-    ? 'Muse is linked to this phone (test).'
-    : 'Muse is linked to your account (test), on every phone you sign in to.';
-  return '<div class="hint" style="padding:8px 4px 0">' + calEsc(where) + '</div>'
-    // Primary (and only) action once paired.
-    + '<button class="museBtn" onclick="museScanNow()">' + icon + '<span>Scan again now</span></button>'
-    + '<div class="hint" style="padding:2px 4px 8px">This pairing code is a password: share it only with Muse.<br>'
-    + '<span style="font-family:var(--mono); word-break:break-all; color:var(--ink); font-size:12px">' + calEsc(p.code) + '</span></div>'
-    + '<button class="acctRow" onclick="musePairShare()"><span>Send pairing to Muse again</span><span class="chev">&rsaquo;</span></button>'
-    + '<button class="acctRow danger" onclick="musePairRevoke()"><span>Revoke Muse access</span></button>';
+  const last = Number(localStorage.getItem('norwestMuseLast') || 0);
+  const tag = last ? '<span class="ptag on">On</span>' : '<span class="ptag wait">Waiting for Muse</span>';
+  const sub = last ? 'Connected. Last check ' + museAgo(last) + '.' : 'Waiting for Muse to check in. This turns to On after its first check.';
+  const manage = museManageOpen
+    ? '<div class="pmanage"><div class="psub">Keep this code private.</div><div class="pcode">' + calEsc(p.code) + '</div>'
+      + '<button class="pbtn ghost" onclick="musePairShare()">Send code to Muse again</button>'
+      + '<button class="pbtn danger" onclick="musePairRevoke()">Revoke Muse access</button></div>'
+    : '';
+  return '<div class="pcard"><div class="phead">' + icon + '<div class="ptxt"><b>Muse</b><div class="psub">' + calEsc(sub) + '</div></div>' + tag + '</div>'
+    + '<button class="pbtn" onclick="museScanNow()">Scan now</button>'
+    + '<div class="pfoot"><button class="plink" onclick="museToggleManage()">' + (museManageOpen ? 'Hide details' : 'Manage Muse') + '</button></div>'
+    + manage + '</div>';
 }
 
 function profileRenderAccount(){
@@ -5803,17 +5843,16 @@ function profileRenderAccount(){
   el.innerHTML = s
     ? `<div style="font-size:13px">Signed in as <b>${calEsc(s.email)}</b></div>
        <div class="hint" style="margin-top:4px">Your calendar and profile sync to this account on your other phones.</div>
+       <div class="pcards">${gmailCardHtml()}${museCardHtml()}</div>
        <div class="acctList">
          ${isAdmin ? `<button class="acctRow" onclick="window.location.href='./admin.html'"><span>Admin dashboard</span><span class="chev">&rsaquo;</span></button>` : ''}
-         ${gmailCardHtml()}
-         ${museCardHtml()}
          <button class="acctRow danger" onclick="nchSignOut()"><span>Log out</span></button>
        </div>`
     : `<div style="font-size:13px">Sign in to keep your calendar on all your phones.</div>
        <button class="btn-primary" style="margin-top:8px; width:100%" onclick="nchSignInStart()">Sign in with passkey</button>
        <button class="btn-secondary" style="margin-top:8px; width:100%" onclick="nchCreateAccount()">New here? Create account</button>
        <div class="hint" style="margin-top:6px">Creating an account opens a sign-up page. When it's done, come back here and tap Sign in with passkey.</div>
-       <div class="acctList">${museCardHtml()}</div>`;
+       <div class="pcards">${museCardHtml()}</div>`;
 }
 // Two-way sync of the five calendar stores. Each store carries its own updatedAt, so a roster
 // edit and a job import do not overwrite each other.

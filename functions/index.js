@@ -1125,6 +1125,7 @@ exports.nchDeviceTouch = onRequest(
     const touch = { name, lastOpenedMs: now };
     if (account) touch.account = account;
     await ref.set(touch, { merge: true });
+    let museLastMs = 0;   // when Muse last checked in for this phone (account or device pairing)
     // New phone, or the name changed: check the pool for jobs shared before this phone registered (v1.101).
     if (!before.exists || (before.data() || {}).poolName !== name) {
       try {
@@ -1132,7 +1133,15 @@ exports.nchDeviceTouch = onRequest(
         await ref.set({ poolName: name }, { merge: true });
       } catch (e) { console.error('backfill failed', e && e.message); }
     }
-    res.json({ ok: true });
+    try {
+      const dev = (await ref.get()).data() || {};
+      museLastMs = Number(dev.museLastMs) || 0;
+      if (account === MUSE_TEST_EMAIL) {
+        const acc = (await nchDoc(MUSE_TEST_EMAIL).get()).data() || {};
+        museLastMs = Math.max(museLastMs, Number(acc.museLastMs) || 0);
+      }
+    } catch (e) { console.error('muse last read failed', String(e && e.message || e).slice(0, 120)); }
+    res.json({ ok: true, museLastMs });
   }
 );
 
@@ -1427,6 +1436,32 @@ exports.nchParseReviewAdmin = onRequest(
         orig: x.orig || {}, final: x.final || {}, changed: x.changed || [], status: x.status, text: x.text || '', marks: x.marks || [] };
     });
     res.json({ rows });
+  }
+);
+
+// Muse reports a check with no new emails too, so the app can show it is connected.
+// Body: { code }. Same pairing rules as nchMuseJob.
+exports.nchMusePing = onRequest(
+  { region: REGION, invoker: 'public', maxInstances: 3 },
+  async (req, res) => {
+    if (nchCors(req, res)) return;
+    if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
+    const code = (req.body || {}).code;
+    if (!museCodeOk(code)) { res.status(400).json({ error: 'Bad request' }); return; }
+    const hash = museCodeHash(code);
+    const fresh = (x) => x && typeof x.musePairedAt === 'number' && Date.now() - x.musePairedAt < MUSE_PAIR_DAYS * 86400000;
+    const acc = nchDoc(MUSE_TEST_EMAIL);
+    const accData = (await acc.get()).data() || {};
+    if (fresh(accData) && accData.museCodeHash === hash) {
+      await acc.set({ museLastMs: Date.now() }, { merge: true });
+      res.json({ ok: true }); return;
+    }
+    const devSnap = await getFirestore().collection('nchDevices').where('museCodeHash', '==', hash).limit(1).get();
+    if (!devSnap.empty && fresh(devSnap.docs[0].data())) {
+      await devSnap.docs[0].ref.set({ museLastMs: Date.now() }, { merge: true });
+      res.json({ ok: true }); return;
+    }
+    res.status(401).json({ error: 'Not paired' });
   }
 );
 
@@ -1769,6 +1804,7 @@ exports.nchMuseJob = onRequest(
     }
     // A good call clears the bad-code counter on whichever pairing matched.
     if ((pairData.museFailed || 0) !== 0) await pairRef.set({ museFailed: 0 }, { merge: true });
+    await pairRef.set({ museLastMs: now }, { merge: true }).catch(() => {});
     res.json({ offered, suggested, phones: reached, scope: pairData.museScope || 'account', jobs });
   }
 );
