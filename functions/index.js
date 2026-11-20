@@ -1778,6 +1778,16 @@ exports.nchMuseJob = onRequest(
       res.status(409).json({ error: 'No phone registered yet - open the app once.' });
       return;
     }
+    // Everyone named on the email who is on the app gets their own offer, not only the paired phone(s).
+    // Same rule as a pasted email shared to the crew: each person's own rows, alerts for those who have them.
+    const known = new Set(phones.map(p => p.id));
+    const allDevs = await db.collection('nchDevices').limit(500).get();
+    for (const d of allDevs.docs) {
+      if (known.has(d.id)) continue;
+      const x = d.data() || {};
+      if (!shareName(x.name)) continue;
+      phones.push({ id: d.id, data: x });
+    }
     const now = Date.now();
     let offered = 0, suggested = 0, reached = 0;
     // When Gmail received the email (Muse sends receivedAt). Falls back to arrival time, marked as such.
