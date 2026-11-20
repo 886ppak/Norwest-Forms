@@ -1446,8 +1446,9 @@ exports.nchMusePing = onRequest(
   async (req, res) => {
     if (nchCors(req, res)) return;
     if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
-    const code = (req.body || {}).code;
-    if (!museCodeOk(code)) { res.status(400).json({ error: 'Bad request' }); return; }
+    const cr = museCodeFromReq(req);
+    const code = cr.code;
+    if (!museCodeOk(code)) { museLogReject(cr); res.status(400).json({ error: 'Bad request', reason: museRejectReason(code) }); return; }
     const hash = museCodeHash(code);
     const fresh = (x) => x && typeof x.musePairedAt === 'number' && Date.now() - x.musePairedAt < MUSE_PAIR_DAYS * 86400000;
     const acc = nchDoc(MUSE_TEST_EMAIL);
@@ -1531,6 +1532,25 @@ function museCodeHash(code) {
 // Same shape the phone generates: nchRandom(18) is 24 base64url characters.
 function museCodeOk(v) {
   return typeof v === 'string' && /^[A-Za-z0-9_-]{20,64}$/.test(v);
+}
+// The pairing code arrives in the X-Muse-Pairing-Code header (where Muse's credential swap puts it)
+// or in the JSON body. The header wins when present. The value is never logged, only its shape.
+function museCodeFromReq(req) {
+  const header = req.get('X-Muse-Pairing-Code');
+  const useHeader = typeof header === 'string' && header.length > 0;
+  return { code: useHeader ? header : (req.body || {}).code, source: useHeader ? 'header' : 'body' };
+}
+function museRejectReason(code) {
+  if (typeof code !== 'string' || !code) return 'missing-code';
+  if (code.startsWith('hsurr:')) return 'surrogate-not-swapped';
+  return 'bad-format';
+}
+function museLogReject(cr) {
+  const c = typeof cr.code === 'string' ? cr.code : '';
+  console.warn('muse code rejected', JSON.stringify({
+    source: cr.source, length: c.length, reason: museRejectReason(cr.code),
+    shape: c.replace(/[A-Za-z0-9]/g, 'x').slice(0, 12),
+  }));
 }
 
 // Register (or replace) the pairing hash. Two modes:
@@ -1694,11 +1714,13 @@ exports.nchMuseJob = onRequest(
     if (nchCors(req, res)) return;
     if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
     const body = req.body || {};
-    const code = body.code;
+    const cr = museCodeFromReq(req);
+    const code = cr.code;
     const text = typeof body.emailText === 'string' ? body.emailText : '';
     const subject = String(body.subject || '').slice(0, 200);
     if (!museCodeOk(code) || !text || text.length > 300000) {
-      res.status(400).json({ error: 'Bad request' });
+      if (!museCodeOk(code)) museLogReject(cr);
+      res.status(400).json({ error: 'Bad request', reason: museCodeOk(code) ? 'bad-body' : museRejectReason(code) });
       return;
     }
     const db = getFirestore();
