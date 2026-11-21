@@ -665,10 +665,13 @@ function render() {
       + `Busiest day: ${fmtWeek(busiest)} with ${opensByDay[busiest]}. `
       + `Phones = distinct devices that opened the app this week; that id is random and made on the phone, never a person.`
     : 'No opens logged yet. Counting starts with this version — each phone needs to open the app once on it.';
-  const installed = opens.filter(r => r.inst).length;
+  // Count phones, not opens: one phone opening the app 20 times is still one phone.
+  const instDev = new Set(opens.filter(r => r.inst && r.device).map(r => r.device));
+  const browserDev = new Set(opens.filter(r => !r.inst && r.device && !instDev.has(r.device)).map(r => r.device));
+  const installed = instDev.size;
   const allPhones = new Set(opens.map(r => r.device).filter(Boolean)).size;
   $('usageSplit').innerHTML = opens.length
-    ? `<span class="pill ok">${installed} installed app</span><span class="pill">${opens.length - installed} in browser</span>`
+    ? `<span class="pill ok">${installed} phone${installed === 1 ? '' : 's'} installed</span><span class="pill">${browserDev.size} phone${browserDev.size === 1 ? '' : 's'} in browser only</span>`
       + `<span class="pill">${allPhones} phone${allPhones === 1 ? '' : 's'} seen</span>`
     : '';
   // New-feature walkthrough (from v1.96 on): unique phones that opened it, and that turned alerts on.
