@@ -5863,8 +5863,8 @@ function profileRenderAccount(){
          <button class="acctRow danger" onclick="nchSignOut()"><span>Log out</span></button>
        </div>`
     : `<div style="font-size:13px">Sign in to keep your calendar on all your phones.</div>
-       <button class="btn-primary" style="margin-top:8px; width:100%" onclick="nchSignInStart()">Sign in with passkey</button>
-       <button class="btn-secondary" style="margin-top:8px; width:100%" onclick="nchCreateAccount()">New here? Create account</button>
+       <button class="pbtn" onclick="nchSignInStart()">Sign in with passkey</button>
+       <button class="pbtn ghost" onclick="nchCreateAccount()">New here? Create account</button>
        <div class="hint" style="margin-top:6px">Creating an account opens a sign-up page. When it's done, come back here and tap Sign in with passkey.</div>
        <div class="pcards">${museCardHtml()}</div>`;
 }
