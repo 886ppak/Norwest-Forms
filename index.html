@@ -5807,6 +5807,11 @@ async function musePairRevoke(){
 // The Muse rows in Profile. Shown for the test account, and for any phone that is signed out.
 // Unpaired: one primary "Allow Muse". Once paired that button is REPLACED by "Scan again now";
 // the pairing send is only reachable from the small link, since it is a one-off.
+// Muse from Meta: the store page for the phone's own store (Play Store on Android, App Store on iPhone).
+const MUSE_PLAY_URL = 'https://play.google.com/store/apps/details?id=com.facebook.aura';
+const MUSE_APPSTORE_URL = 'https://apps.apple.com/app/id6760173601';
+function museIsIphone(){ try{ return /iPhone|iPad|iPod/i.test(navigator.userAgent); }catch(e){ return false; } }
+function museStoreUrl(){ return museIsIphone() ? MUSE_APPSTORE_URL : MUSE_PLAY_URL; }
 let museManageOpen = false;
 function museAgo(ms){
   const m = Math.round((Date.now() - ms) / 60000);
@@ -5828,7 +5833,8 @@ function museCardHtml(){
   if(!p){
     return '<div class="pcard"><div class="phead">' + icon + '<div class="ptxt"><b>Muse</b><div class="psub">Sends jobs from your mobilisation emails. You still accept each one.</div></div><span class="ptag off">Off</span></div>'
       + '<button class="pbtn" onclick="museAllow()">Allow Muse</button>'
-      + '<div class="pnote">Opens the share picker with the setup message ready to send.</div></div>';
+      + '<div class="pnote">Opens the share picker with the setup message ready to send.</div>'
+      + '<div class="pfoot"><a class="plink" href="' + museStoreUrl() + '" target="_blank" rel="noopener">Get Muse from the ' + (museIsIphone() ? 'App Store' : 'Play Store') + '</a></div></div>';
   }
   const last = Number(localStorage.getItem('norwestMuseLast') || 0);
   const tag = last ? '<span class="ptag on">On</span>' : '<span class="ptag wait">Waiting for Muse</span>';
